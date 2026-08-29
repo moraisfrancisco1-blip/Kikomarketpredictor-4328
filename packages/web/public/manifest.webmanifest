@@ -1,0 +1,18 @@
+{
+  "name": "Market Predictor — Terminal Quantitativo",
+  "short_name": "Predictor",
+  "description": "Previsões 100% baseadas em dados para futebol, mercados e loteria. Sem odds de casas de apostas.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0e1a",
+  "theme_color": "#0a0e1a",
+  "lang": "pt-BR",
+  "categories": ["sports", "finance", "utilities"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
