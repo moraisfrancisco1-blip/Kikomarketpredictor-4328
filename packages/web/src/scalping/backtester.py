@@ -1,8 +1,7 @@
 """Event-driven, bar-based backtester for the XAUUSD scalp engine.
 
-Execution model: signal at bar close, entry at next bar open with configurable
-spread/slippage, then stop/target checked on subsequent bars. If SL and TP are
-both touched in one candle, SL wins (conservative assumption).
+Signal at bar close -> entry at next bar open with configurable spread/slippage.
+If SL and TP are both touched in one candle, SL wins (conservative assumption).
 """
 from __future__ import annotations
 from dataclasses import dataclass, asdict
@@ -38,8 +37,8 @@ class Trade:
 
 def _metrics(trades: list[Trade], initial_equity: float) -> dict:
     if not trades:
-        return {"trades": 0, "winRate": 0.0, "profitFactor": 0.0, "netPnl": 0.0,
-                "returnPct": 0.0, "maxDrawdownPct": 0.0, "avgR": 0.0}
+        return {"trades": 0, "wins": 0, "losses": 0, "winRate": 0.0, "profitFactor": 0.0,
+                "netPnl": 0.0, "returnPct": 0.0, "maxDrawdownPct": 0.0, "avgR": 0.0}
     pnl = np.array([t.pnl for t in trades], dtype=float)
     r = np.array([t.r_multiple for t in trades], dtype=float)
     gross_win = pnl[pnl > 0].sum()
@@ -48,15 +47,11 @@ def _metrics(trades: list[Trade], initial_equity: float) -> dict:
     peak = np.maximum.accumulate(np.r_[initial_equity, equity])
     dd = (np.r_[initial_equity, equity] - peak) / peak
     return {
-        "trades": len(trades),
-        "wins": int((pnl > 0).sum()),
-        "losses": int((pnl < 0).sum()),
+        "trades": len(trades), "wins": int((pnl > 0).sum()), "losses": int((pnl < 0).sum()),
         "winRate": round(float((pnl > 0).mean() * 100), 2),
         "profitFactor": round(float(gross_win / gross_loss), 3) if gross_loss else float("inf"),
-        "netPnl": round(float(pnl.sum()), 2),
-        "returnPct": round(float(pnl.sum() / initial_equity * 100), 2),
-        "maxDrawdownPct": round(float(-dd.min() * 100), 2),
-        "avgR": round(float(r.mean()), 3),
+        "netPnl": round(float(pnl.sum()), 2), "returnPct": round(float(pnl.sum() / initial_equity * 100), 2),
+        "maxDrawdownPct": round(float(-dd.min() * 100), 2), "avgR": round(float(r.mean()), 3),
     }
 
 
@@ -64,57 +59,45 @@ def run_backtest(bars: pd.DataFrame, cfg: BacktestConfig = BacktestConfig(), sca
     x = build_features(bars).dropna(subset=["ema50", "atr", "adx14", "volume_ratio"]).reset_index(drop=True)
     scalp_cfg = scalp_cfg or ScalpConfig(risk_per_trade_pct=cfg.risk_pct, rr=cfg.rr)
     trades: list[Trade] = []
-    i = 0
-    equity = cfg.initial_equity
+    i, equity = 0, cfg.initial_equity
 
     while i < len(x) - 2:
-        row = x.iloc[i]
-        decision = evaluate(row_to_features(row), scalp_cfg)
+        decision = evaluate(row_to_features(x.iloc[i]), scalp_cfg)
         if decision.signal == "NO_TRADE":
             i += 1
             continue
-
         entry_bar = x.iloc[i + 1]
         spread = float(entry_bar.get("spread", 0.0)) * cfg.point_size
         slip = cfg.slippage_points * cfg.point_size
         if decision.signal == "LONG":
             entry = float(entry_bar.open) + spread + slip
-            stop, target = float(decision.stop), float(decision.target)
         else:
             entry = float(entry_bar.open) - spread - slip
-            stop, target = float(decision.stop), float(decision.target)
-
+        stop, target = float(decision.stop), float(decision.target)
         risk_distance = abs(entry - stop)
         if risk_distance <= 0:
             i += 1
             continue
         risk_cash = equity * cfg.risk_pct / 100.0
         qty = risk_cash / risk_distance
-        exit_price = None
-        exit_reason = "end_of_data"
-        exit_time = x.iloc[-1].time
+        exit_price, exit_reason, exit_time = None, "end_of_data", x.iloc[-1].time
         j = i + 1
         while j < len(x):
             b = x.iloc[j]
             if decision.signal == "LONG":
-                hit_sl = b.low <= stop
-                hit_tp = b.high >= target
-                if hit_sl:
+                if b.low <= stop:
                     exit_price, exit_reason = stop, "stop"
-                elif hit_tp:
+                elif b.high >= target:
                     exit_price, exit_reason = target, "target"
             else:
-                hit_sl = b.high >= stop
-                hit_tp = b.low <= target
-                if hit_sl:
+                if b.high >= stop:
                     exit_price, exit_reason = stop, "stop"
-                elif hit_tp:
+                elif b.low <= target:
                     exit_price, exit_reason = target, "target"
             if exit_price is not None:
                 exit_time = b.time
                 break
             j += 1
-
         if exit_price is None:
             exit_price = float(x.iloc[-1].close)
         gross = (exit_price - entry) * qty if decision.signal == "LONG" else (entry - exit_price) * qty
@@ -133,5 +116,5 @@ def run_backtest(bars: pd.DataFrame, cfg: BacktestConfig = BacktestConfig(), sca
 
 if __name__ == "__main__":
     from mt5_adapter import load_mt5_bars
-    bars = load_mt5_bars("XAUUSD", "M1", 50_000)
-    print(run_backtest(bars)["metrics"] if "metrics" in run_backtest(bars) else run_backtest(bars))
+    result = run_backtest(load_mt5_bars("XAUUSD", "M1", 50_000))
+    print({k: v for k, v in result.items() if k != "tradesDetail"})
