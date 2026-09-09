@@ -1,7 +1,8 @@
 """Event-driven, bar-based backtester for the XAUUSD scalp engine.
 
-Signal at bar close -> entry at next bar open with configurable spread/slippage.
-If SL and TP are both touched in one candle, SL wins (conservative assumption).
+Signal at bar close -> entry at next bar open. If bid/ask OHLC are present,
+longs enter on ask and exit on bid; shorts enter on bid and exit on ask.
+If SL and TP are both touched in one candle, SL wins conservatively.
 """
 from __future__ import annotations
 from dataclasses import dataclass, asdict
@@ -61,7 +62,7 @@ def run_backtest(
     scalp_cfg: ScalpConfig | None = None,
     ml_probabilities: pd.Series | None = None,
 ) -> dict:
-    """Run the same strategy with optional externally generated, leak-free ML probabilities."""
+    """Run the strategy with optional externally generated, leak-free ML probabilities."""
     x = build_features(bars).dropna(subset=["ema50", "atr", "adx14", "volume_ratio"]).reset_index(drop=True)
     if ml_probabilities is not None:
         probs = pd.Series(ml_probabilities).reset_index(drop=True)
@@ -77,13 +78,15 @@ def run_backtest(
         if decision.signal == "NO_TRADE":
             i += 1
             continue
+
         entry_bar = x.iloc[i + 1]
-        spread = float(entry_bar.get("spread", 0.0)) * cfg.point_size
         slip = cfg.slippage_points * cfg.point_size
+        has_ask = all(c in entry_bar.index for c in ("ask_open", "ask_high", "ask_low"))
         if decision.signal == "LONG":
-            entry = float(entry_bar.open) + spread + slip
+            entry = float(entry_bar.ask_open if has_ask else entry_bar.open) + slip
         else:
-            entry = float(entry_bar.open) - spread - slip
+            entry = float(entry_bar.open) - slip
+
         stop, target = float(decision.stop), float(decision.target)
         risk_distance = abs(entry - stop)
         if risk_distance <= 0:
@@ -96,19 +99,26 @@ def run_backtest(
         while j < len(x):
             b = x.iloc[j]
             if decision.signal == "LONG":
-                if b.low <= stop:
+                # Long exits are executed against bid prices.
+                low = float(b.low)
+                high = float(b.high)
+                if low <= stop:
                     exit_price, exit_reason = stop, "stop"
-                elif b.high >= target:
+                elif high >= target:
                     exit_price, exit_reason = target, "target"
             else:
-                if b.high >= stop:
+                # Short exits are executed against ask prices when available.
+                low = float(b.ask_low if "ask_low" in b.index else b.low)
+                high = float(b.ask_high if "ask_high" in b.index else b.high)
+                if high >= stop:
                     exit_price, exit_reason = stop, "stop"
-                elif b.low <= target:
+                elif low <= target:
                     exit_price, exit_reason = target, "target"
             if exit_price is not None:
                 exit_time = b.time
                 break
             j += 1
+
         if exit_price is None:
             exit_price = float(x.iloc[-1].close)
         gross = (exit_price - entry) * qty if decision.signal == "LONG" else (entry - exit_price) * qty
