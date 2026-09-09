@@ -55,14 +55,25 @@ def _metrics(trades: list[Trade], initial_equity: float) -> dict:
     }
 
 
-def run_backtest(bars: pd.DataFrame, cfg: BacktestConfig = BacktestConfig(), scalp_cfg: ScalpConfig | None = None) -> dict:
+def run_backtest(
+    bars: pd.DataFrame,
+    cfg: BacktestConfig = BacktestConfig(),
+    scalp_cfg: ScalpConfig | None = None,
+    ml_probabilities: pd.Series | None = None,
+) -> dict:
+    """Run the same strategy with optional externally generated, leak-free ML probabilities."""
     x = build_features(bars).dropna(subset=["ema50", "atr", "adx14", "volume_ratio"]).reset_index(drop=True)
+    if ml_probabilities is not None:
+        probs = pd.Series(ml_probabilities).reset_index(drop=True)
+        if len(probs) != len(x):
+            raise ValueError("ml_probabilities must align with the feature rows after preprocessing")
+        x["ml_prob_up"] = probs.astype(float).clip(0.0, 1.0)
     scalp_cfg = scalp_cfg or ScalpConfig(risk_per_trade_pct=cfg.risk_pct, rr=cfg.rr)
     trades: list[Trade] = []
     i, equity = 0, cfg.initial_equity
 
     while i < len(x) - 2:
-        decision = evaluate(row_to_features(x.iloc[i]), scalp_cfg)
+        decision = evaluate(row_to_features(x.iloc[i], float(x.iloc[i].get("ml_prob_up", 0.50))), scalp_cfg)
         if decision.signal == "NO_TRADE":
             i += 1
             continue
