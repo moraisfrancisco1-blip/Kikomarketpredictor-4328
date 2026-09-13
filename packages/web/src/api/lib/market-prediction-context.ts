@@ -49,15 +49,16 @@ export function applyPredictionContext(
     Math.min(0.95, prediction.probabilityUpCalibrated + sentimentAdjustment),
   );
 
-  const technicalDistance = Math.abs(prediction.probabilityUpCalibrated - 0.5) * 2;
-  const adjustedDistance = Math.abs(adjustedDirectional - 0.5) * 2;
   const probabilityFlat = prediction.probabilityFlat ?? 0.34;
   const directionalMass = 1 - probabilityFlat;
   const probabilityUp = Math.max(
     0.01,
     Math.min(0.99, adjustedDirectional * directionalMass + probabilityFlat * 0.5),
   );
-  const probabilityDown = Math.max(0.01, Math.min(0.99, directionalMass - adjustedDirectional * directionalMass + probabilityFlat * 0.5));
+  const probabilityDown = Math.max(
+    0.01,
+    Math.min(0.99, (1 - adjustedDirectional) * directionalMass + probabilityFlat * 0.5),
+  );
 
   const direction: Prediction["direction"] =
     adjustedDirectional >= 0.58 ? "up" : adjustedDirectional <= 0.42 ? "down" : "flat";
@@ -110,8 +111,6 @@ export function applyPredictionContext(
       pct: confPct,
       breakdown,
     },
-    // Keep this metadata available to the client without changing the
-    // technical expected-return estimate.
     signals: sentiment
       ? [
           ...prediction.signals,
