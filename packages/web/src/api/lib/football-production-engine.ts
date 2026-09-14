@@ -1,8 +1,9 @@
-import { fitDixonColes, predictMatch, predictOU, restDaysAt, tuneHalfLife, backtest, backtestWithSamples, type DCMatch } from "./dixoncoles";
+import { fitDixonColes, predictMatch, predictOU, restDaysAt, tuneHalfLife, backtestWithSamples, type DCMatch } from "./dixoncoles";
 import { computeFatigue, computeH2H, computeImportance, type XGTeamStats } from "./sports-enrichment";
+import { computeSportsConfidence } from "./tracker";
 import { clampFootballContextAdjustment, type FootballContextAdjustment } from "./football-model-contract";
 import { normalizeFixtureDate } from "./football-time-context";
-import { multiclassBrier, multiclassLogLoss, reliabilityBuckets, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation";
+import { multiclassBrier, multiclassLogLoss, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation";
 
 export type ProductionFootballMatch = {
   date: string;
@@ -44,7 +45,16 @@ export type ProductionFootballPrediction = {
   under25: number;
   bttsYes: number;
   topScores: { score: string; prob: number }[];
+  eloHome: number;
+  eloAway: number;
+  homeAdv: number;
+  rho: number;
   halfLife: number;
+  sample: number;
+  ouLines: ReturnType<typeof predictOU>;
+  formHome: string;
+  formAway: string;
+  confidence: number;
   restHomeDays?: number;
   restAwayDays?: number;
   fatigue: ReturnType<typeof computeFatigue>;
@@ -60,53 +70,61 @@ export type ProductionFootballPrediction = {
 };
 
 function asDC(matches: ProductionFootballMatch[]): DCMatch[] {
-  return matches.map((m) => ({
-    date: m.date,
-    home: m.home,
-    away: m.away,
-    hg: m.hg,
-    ag: m.ag,
-    neutral: m.neutral,
-  }));
+  return matches.map((m) => ({ date: m.date, home: m.home, away: m.away, hg: m.hg, ag: m.ag, neutral: m.neutral }));
 }
 
 function normalize3(p: { home: number; draw: number; away: number }) {
-  const h = Math.max(0, p.home);
-  const d = Math.max(0, p.draw);
-  const a = Math.max(0, p.away);
-  const s = h + d + a || 1;
+  const h = Math.max(0, p.home), d = Math.max(0, p.draw), a = Math.max(0, p.away), s = h + d + a || 1;
   return { home: h / s, draw: d / s, away: a / s };
 }
 
+function buildElo(matches: ProductionFootballMatch[]) {
+  const ratings: Record<string, number> = {};
+  const get = (team: string) => ratings[team] ?? 1500;
+  for (const m of [...matches].sort((a, b) => a.date.localeCompare(b.date))) {
+    const rh = get(m.home) + 65;
+    const ra = get(m.away);
+    const expected = 1 / (1 + 10 ** ((ra - rh) / 400));
+    const actual = m.hg > m.ag ? 1 : m.hg === m.ag ? 0.5 : 0;
+    const gd = Math.abs(m.hg - m.ag);
+    const multiplier = gd <= 1 ? 1 : gd === 2 ? 1.5 : (11 + gd) / 8;
+    const delta = 20 * multiplier * (actual - expected);
+    ratings[m.home] = get(m.home) + delta;
+    ratings[m.away] = get(m.away) - delta;
+  }
+  return ratings;
+}
+
+function teamForm(matches: ProductionFootballMatch[], team: string, n = 5): string {
+  return [...matches]
+    .filter((m) => m.home === team || m.away === team)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-n)
+    .map((m) => {
+      if (m.hg === m.ag) return "D";
+      const teamHome = m.home === team;
+      return teamHome ? (m.hg > m.ag ? "W" : "L") : (m.ag > m.hg ? "W" : "L");
+    })
+    .join("") || "-";
+}
+
 function buildValidation(samples: NonNullable<ReturnType<typeof backtestWithSamples>>, minimum = 100): ProductionFootballValidation {
-  const rows: ThreeWaySample[] = samples.map((s) => ({
-    probHome: s.probHome,
-    probDraw: s.probDraw,
-    probAway: s.probAway,
-    outcome: s.outcome,
-  }));
+  const rows: ThreeWaySample[] = samples.map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
   const homeRate = rows.length ? rows.filter((s) => s.outcome === 0).length / rows.length : 1 / 3;
   const drawRate = rows.length ? rows.filter((s) => s.outcome === 1).length / rows.length : 1 / 3;
   const awayRate = rows.length ? rows.filter((s) => s.outcome === 2).length / rows.length : 1 / 3;
+  const baselineRows = rows.map((s) => ({ probHome: homeRate, probDraw: drawRate, probAway: awayRate, outcome: s.outcome }));
   const brier = multiclassBrier(rows);
   const logLoss = multiclassLogLoss(rows);
-  const baselineRows = rows.map((s) => ({ probHome: homeRate, probDraw: drawRate, probAway: awayRate, outcome: s.outcome }));
+  const baselineBrier = multiclassBrier(baselineRows);
+  const baselineLogLoss = multiclassLogLoss(baselineRows);
   const maxWinnerProbability = rows.reduce((m, s) => Math.max(m, s.probHome, s.probDraw, s.probAway), 0);
   const warnings: string[] = [];
   if (rows.length < minimum) warnings.push("insufficient out-of-sample validation sample");
   if (maxWinnerProbability >= 0.85) warnings.push("high probability concentration");
-  if (brier != null && multiclassBrier(baselineRows) != null && brier >= multiclassBrier(baselineRows)!) warnings.push("Brier does not beat base-rate baseline");
-  if (logLoss != null && multiclassLogLoss(baselineRows) != null && logLoss >= multiclassLogLoss(baselineRows)!) warnings.push("log loss does not beat base-rate baseline");
-  return {
-    sample: rows.length,
-    brier,
-    logLoss,
-    baselineBrier: multiclassBrier(baselineRows),
-    baselineLogLoss: multiclassLogLoss(baselineRows),
-    maxWinnerProbability,
-    sufficient: rows.length >= minimum,
-    warnings,
-  };
+  if (brier != null && baselineBrier != null && brier >= baselineBrier) warnings.push("Brier does not beat base-rate baseline");
+  if (logLoss != null && baselineLogLoss != null && logLoss >= baselineLogLoss) warnings.push("log loss does not beat base-rate baseline");
+  return { sample: rows.length, brier, logLoss, baselineBrier, baselineLogLoss, maxWinnerProbability, sufficient: rows.length >= minimum, warnings };
 }
 
 function calibrateWithHistory(p: { home: number; draw: number; away: number }, samples: ThreeWaySample[]) {
@@ -138,9 +156,8 @@ function getValidationSamples(matches: ProductionFootballMatch[], halfLife: numb
 
 /**
  * Production-safe football engine. Fixture date is mandatory so rest/fatigue
- * cannot accidentally depend on today's date. xG is exposed as context only;
- * it is not allowed into the probability forecast until a historical xG
- * dataset has been validated out-of-sample.
+ * cannot accidentally depend on today's date. xG is display-only until a
+ * per-match historical xG dataset has passed out-of-sample validation.
  */
 export function predictFootballProduction(
   matches: ProductionFootballMatch[],
@@ -171,18 +188,14 @@ export function predictFootballProduction(
     motivationFactor: context.motivationFactor,
   });
 
-  const validationSamples = getValidationSamples(matches, tuned.halfLifeDays).map((s) => ({
-    probHome: s.probHome,
-    probDraw: s.probDraw,
-    probAway: s.probAway,
-    outcome: s.outcome,
-  }));
+  const validationSamples = getValidationSamples(matches, tuned.halfLifeDays).map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
   const calibrated = calibrateWithHistory({ home: raw.probHome, draw: raw.probDraw, away: raw.probAway }, validationSamples);
   const validation = buildValidation(getValidationSamples(matches, tuned.halfLifeDays));
+  const elo = buildElo(matches);
+  const warnings = [...validation.warnings, ...(context.warnings ?? [])];
 
   const xgHome = options.xg?.get(home)?.xgFor;
   const xgAway = options.xg?.get(away)?.xgFor;
-  const warnings = [...validation.warnings, ...(context.warnings ?? [])];
   if (options.xg && (xgHome == null || xgAway == null)) warnings.push("xG data incomplete; ignored");
   warnings.push("xG is display-only until historical out-of-sample xG validation is available");
 
@@ -199,7 +212,23 @@ export function predictFootballProduction(
     under25: raw.under25,
     bttsYes: raw.bttsYes,
     topScores: raw.topScores,
+    eloHome: Math.round(elo[home] ?? 1500),
+    eloAway: Math.round(elo[away] ?? 1500),
+    homeAdv: +Math.exp(model.homeAdv).toFixed(2),
+    rho: +model.rho.toFixed(3),
     halfLife: tuned.halfLifeDays,
+    sample: matches.length,
+    ouLines: predictOU(raw.expHomeGoals, raw.expAwayGoals, model.rho),
+    formHome: teamForm(matches, home),
+    formAway: teamForm(matches, away),
+    confidence: computeSportsConfidence({
+      sample: matches.length,
+      probWinner: Math.max(calibrated.home, calibrated.draw, calibrated.away),
+      isFriendly: false,
+      formAvailable: true,
+      gamesHome: matches.filter((m) => m.home === home || m.away === home).length,
+      gamesAway: matches.filter((m) => m.home === away || m.away === away).length,
+    }),
     restHomeDays,
     restAwayDays,
     fatigue: computeFatigue(matches, home, away, fixtureDate.slice(0, 10)),
