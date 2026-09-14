@@ -155,9 +155,10 @@ function getValidationSamples(matches: ProductionFootballMatch[], halfLife: numb
 }
 
 /**
- * Production-safe football engine. Fixture date is mandatory so rest/fatigue
- * cannot accidentally depend on today's date. xG is display-only until a
- * per-match historical xG dataset has passed out-of-sample validation.
+ * Production-safe football engine. Fixture date is mandatory so every
+ * historical feature is calculated strictly from information available
+ * before the fixture. xG is display-only until historical per-match xG has
+ * passed out-of-sample validation.
  */
 export function predictFootballProduction(
   matches: ProductionFootballMatch[],
@@ -169,7 +170,16 @@ export function predictFootballProduction(
   if (matches.length < 120) throw new Error("not enough historical matches for production prediction");
 
   const fixtureDate = normalizeFixtureDate(options.fixtureDate);
-  const dc = asDC(matches);
+  const fixtureTs = new Date(fixtureDate).getTime();
+  const asOfMatches = matches.filter((m) => {
+    const matchTs = new Date(m.date).getTime();
+    return Number.isFinite(matchTs) && matchTs < fixtureTs;
+  });
+  if (asOfMatches.length < 120) {
+    throw new Error("not enough historical matches available before fixture date");
+  }
+
+  const dc = asDC(asOfMatches);
   const tuned = tuneHalfLife(dc);
   const model = fitDixonColes(dc, { halfLifeDays: tuned.halfLifeDays });
   if (model.att[home] == null || model.att[away] == null) throw new Error("team not found in historical sample");
@@ -188,10 +198,10 @@ export function predictFootballProduction(
     motivationFactor: context.motivationFactor,
   });
 
-  const validationSamples = getValidationSamples(matches, tuned.halfLifeDays).map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
+  const validationSamples = getValidationSamples(asOfMatches, tuned.halfLifeDays).map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
   const calibrated = calibrateWithHistory({ home: raw.probHome, draw: raw.probDraw, away: raw.probAway }, validationSamples);
-  const validation = buildValidation(getValidationSamples(matches, tuned.halfLifeDays));
-  const elo = buildElo(matches);
+  const validation = buildValidation(getValidationSamples(asOfMatches, tuned.halfLifeDays));
+  const elo = buildElo(asOfMatches);
   const warnings = [...validation.warnings, ...(context.warnings ?? [])];
 
   const xgHome = options.xg?.get(home)?.xgFor;
@@ -217,24 +227,24 @@ export function predictFootballProduction(
     homeAdv: +Math.exp(model.homeAdv).toFixed(2),
     rho: +model.rho.toFixed(3),
     halfLife: tuned.halfLifeDays,
-    sample: matches.length,
+    sample: asOfMatches.length,
     ouLines: predictOU(raw.expHomeGoals, raw.expAwayGoals, model.rho),
-    formHome: teamForm(matches, home),
-    formAway: teamForm(matches, away),
+    formHome: teamForm(asOfMatches, home),
+    formAway: teamForm(asOfMatches, away),
     confidence: computeSportsConfidence({
-      sample: matches.length,
+      sample: asOfMatches.length,
       probWinner: Math.max(calibrated.home, calibrated.draw, calibrated.away),
       isFriendly: false,
       formAvailable: true,
-      gamesHome: matches.filter((m) => m.home === home || m.away === home).length,
-      gamesAway: matches.filter((m) => m.home === away || m.away === away).length,
+      gamesHome: asOfMatches.filter((m) => m.home === home || m.away === home).length,
+      gamesAway: asOfMatches.filter((m) => m.home === away || m.away === away).length,
     }),
     restHomeDays,
     restAwayDays,
-    fatigue: computeFatigue(matches, home, away, fixtureDate.slice(0, 10)),
-    h2h: computeH2H(matches, home, away),
-    importanceHome: computeImportance(matches, home, away).home,
-    importanceAway: computeImportance(matches, home, away).away,
+    fatigue: computeFatigue(asOfMatches, home, away, fixtureDate.slice(0, 10)),
+    h2h: computeH2H(asOfMatches, home, away),
+    importanceHome: computeImportance(asOfMatches, home, away).home,
+    importanceAway: computeImportance(asOfMatches, home, away).away,
     xgHome,
     xgAway,
     xgUsed: false,
