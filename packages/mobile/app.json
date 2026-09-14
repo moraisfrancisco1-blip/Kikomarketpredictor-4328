@@ -1,40 +1,37 @@
 {
   "expo": {
+    "name": "PrevCore",
+    "slug": "prevcore",
+    "version": "1.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "prevcore",
     "icon": "./assets/icon.png",
     "android": {
-      "package": "com.appId.runable",
+      "package": "com.prevcore.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#08111f"
       },
       "edgeToEdgeEnabled": true
+    },
+    "ios": {
+      "bundleIdentifier": "com.prevcore.app",
+      "supportsTablet": true
     },
     "extra": {
       "apiUrl": "https://svd3yfy099h6laqq1qg2g-preview-4200.runable.site/",
       "applicationId": "svd3yfy099h6laqq1qg2g"
     },
-    "ios": {
-      "bundleIdentifier": "com.appId.runable",
-      "supportsTablet": true
-    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "cover",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#08111f"
     },
-    "name": "mobile",
-    "slug": "mobile",
-    "version": "1.0.0",
-    "scheme": "mobile",
-    "orientation": "portrait",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
-    "plugins": [
-      "expo-router"
-    ]
+    "plugins": ["expo-router"]
   }
 }
