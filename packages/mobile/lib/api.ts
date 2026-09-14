@@ -1,16 +1,25 @@
 import Constants from "expo-constants";
 
+// Expo Go should be able to override the preview URL with EXPO_PUBLIC_API_URL.
 const configuredUrl =
-  Constants.expoConfig?.extra?.apiUrl ?? process.env.EXPO_PUBLIC_API_URL ?? "";
+  process.env.EXPO_PUBLIC_API_URL ?? Constants.expoConfig?.extra?.apiUrl ?? "";
 
-export const API_BASE_URL = configuredUrl.replace(/\/+$/, "");
+// Accept either a host URL or a URL that already ends in /api.
+export const API_BASE_URL = configuredUrl
+  .trim()
+  .replace(/\/+$/, "")
+  .replace(/\/api$/i, "");
 
 export function apiUrl(path: string) {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   return `${API_BASE_URL}${normalized}`;
 }
 
-export async function apiFetch<T>(path: string, init: RequestInit = {}, timeoutMs = 12000): Promise<T> {
+export async function apiFetch<T>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 12000,
+): Promise<T> {
   if (!API_BASE_URL) throw new Error("API URL not configured");
 
   const controller = new AbortController();
@@ -25,7 +34,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, timeoutM
 
     const raw = await response.text();
     let body: any = null;
-    try { body = raw ? JSON.parse(raw) : null; } catch { body = null; }
+    try {
+      body = raw ? JSON.parse(raw) : null;
+    } catch {
+      body = null;
+    }
 
     if (!response.ok) {
       throw new Error(body?.error || `API ${response.status}`);
