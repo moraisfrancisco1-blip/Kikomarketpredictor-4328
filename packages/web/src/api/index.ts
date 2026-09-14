@@ -23,13 +23,15 @@ app.get("/sports/football/predict", async (c) => {
   const code = (c.req.query("league") ?? "E0").toUpperCase();
   const home = c.req.query("home") ?? "";
   const away = c.req.query("away") ?? "";
+  const fixtureDate = c.req.query("fixtureDate") ?? "";
   if (!home || !away) return c.json({ error: "home and away required" }, 400);
   if (home === away) return c.json({ error: "pick two different teams" }, 400);
+  if (!fixtureDate) return c.json({ error: "fixtureDate is required for a leakage-safe prediction" }, 400);
   try {
     const matches = await fetchFootball(code);
     const leagueName = FOOTBALL_LEAGUES[code]?.name ?? code;
     const prediction = predictFootball(leagueName, matches, home, away, {
-      fixtureDate: c.req.query("fixtureDate") ?? undefined,
+      fixtureDate,
       homeAttackMult: parseMultiplier(c.req.query("homeAttackMult"), 1),
       homeDefMult: parseMultiplier(c.req.query("homeDefMult"), 1),
       awayAttackMult: parseMultiplier(c.req.query("awayAttackMult"), 1),
