@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -75,25 +75,29 @@ export default function Index() {
 
   const load = useCallback(async () => {
     setHealthError(null);
-    const healthResult = await checkApi().catch((e) => {
-      setHealth(null);
-      setHealthError(e.message || "Unable to reach API");
-      return null;
-    });
-    if (healthResult) setHealth(healthResult);
 
-    const results = await Promise.allSettled(
-      WATCH_SYMBOLS.map(async (symbol) => {
+    const [healthResult, ...dataResults] = await Promise.allSettled([
+      checkApi(),
+      ...WATCH_SYMBOLS.map(async (symbol) => {
         const [m, p] = await Promise.all([
           apiFetch<MarketResponse>(`/api/markets?symbol=${encodeURIComponent(symbol)}`),
           apiFetch<PredictionResponse>(`/api/predict?symbol=${encodeURIComponent(symbol)}`),
         ]);
         return { symbol, m, p };
       }),
-    );
+      apiFetch<FootballResponse>("/api/sports/football/fixtures?league=E0&days=7"),
+    ]);
+
+    if (healthResult.status === "fulfilled") {
+      setHealth(healthResult.value);
+    } else {
+      setHealth(null);
+      setHealthError(healthResult.reason?.message || "Unable to reach API");
+    }
+
     const nextMarkets: Record<string, MarketResponse> = {};
     const nextPredictions: Record<string, PredictionResponse> = {};
-    results.forEach((result) => {
+    dataResults.slice(0, WATCH_SYMBOLS.length).forEach((result) => {
       if (result.status === "fulfilled") {
         nextMarkets[result.value.symbol] = result.value.m;
         nextPredictions[result.value.symbol] = result.value.p;
@@ -102,8 +106,8 @@ export default function Index() {
     setMarket(nextMarkets);
     setPredictions(nextPredictions);
 
-    const footballResult = await apiFetch<FootballResponse>("/api/sports/football/fixtures?league=E0&days=7").catch(() => null);
-    if (footballResult) setFootball(footballResult);
+    const footballResult = dataResults[WATCH_SYMBOLS.length];
+    if (footballResult?.status === "fulfilled") setFootball(footballResult.value);
     setLoading(false);
   }, []);
 
@@ -114,11 +118,11 @@ export default function Index() {
     try { await load(); } finally { setRefreshing(false); }
   }, [load]);
 
-  const latest = WATCH_SYMBOLS.map((symbol) => ({
+  const latest = useMemo(() => WATCH_SYMBOLS.map((symbol) => ({
     symbol,
     price: market[symbol]?.candles?.at(-1)?.close,
     prediction: predictions[symbol]?.prediction,
-  })).filter((x) => x.price !== undefined || x.prediction);
+  })).filter((x) => x.price !== undefined || x.prediction), [market, predictions]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -274,7 +278,6 @@ const styles = StyleSheet.create({
   metricLabel: { color: "#70839d", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6 },
   metricValue: { color: "#fff", fontSize: 15, fontWeight: "800", marginTop: 4 },
   metricDetail: { color: "#667991", fontSize: 9, marginTop: 4 },
-  metricsRow: { flexDirection: "row", gap: 8, marginTop: 18 },
   loading: { alignItems: "center", paddingVertical: 80 },
   loadingText: { color: "#8294ab", marginTop: 12, fontSize: 13 },
   errorCard: { borderColor: "#5b3438", backgroundColor: "#211419" },
