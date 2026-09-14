@@ -109,7 +109,9 @@ export function computeSummary(records: PredictionRecord[]): TrackerSummary {
 }
 
 // ─── Confidence score for sports predictions ─────────────────────────────────
-// Returns 0..1 based on: sample size, model separation, friendly penalty, form data quality
+// Conservative by design: confidence is NOT the probability of winning.
+// It is a data-quality/model-separation score and is capped when the available
+// history is too small to support a strong claim.
 export function computeSportsConfidence(opts: {
   sample: number;
   probWinner: number;   // max(probHome, probDraw, probAway)
@@ -120,9 +122,9 @@ export function computeSportsConfidence(opts: {
 }): number {
   const { sample, probWinner, isFriendly, gamesHome, gamesAway } = opts;
   
-  // Base: how much separation from 33% (three-way)
+  // Base: separation from 33% (three-way)
   const separation = Math.max(0, probWinner - 0.333);
-  let score = separation * 2.5; // 0..~0.4
+  let score = separation * 2.5;
   
   // Sample quality: more data = more confidence
   const sampleScore = Math.min(1, sample / 800) * 0.25;
@@ -133,10 +135,18 @@ export function computeSportsConfidence(opts: {
   const teamScore = Math.min(1, minGames / 30) * 0.15;
   score += teamScore;
   
-  // Friendly penalty: -30%
   if (isFriendly) score *= 0.7;
+
+  // Hard data-quality caps. These prevent the UI from implying strong
+  // confidence when either team has too little prior evidence.
+  if (minGames < 5) score = Math.min(score, 0.20);
+  else if (minGames < 10) score = Math.min(score, 0.35);
+  else if (minGames < 20) score = Math.min(score, 0.50);
   
-  // Cap at 0.80 — markets have humans pricing them already
+  if (sample < 200) score = Math.min(score, 0.45);
+  else if (sample < 400) score = Math.min(score, 0.60);
+  
+  // Cap below 1.0: this score is deliberately not presented as a certainty.
   return Math.min(0.80, Math.max(0.05, +score.toFixed(3)));
 }
 
@@ -197,7 +207,7 @@ export function detectRegime(closes: number[], rsi14val: number, sma20val: numbe
     "bull-strong": "Tendência de alta forte — preço acima das duas MMs, momentum positivo, RSI elevado",
     "bull-moderate": "Tendência de alta moderada — sinais maioritariamente positivos",
     "bull-weak": "Ligeira pressão compradora — sinal fraco, precaução",
-    "bear-strong": "Tendência de baixa forte — preço abaixo das duas MMs, momentum negativo",
+    "bear-strong": "Tendência de baixa forte — preço abaixo das duas MMs, momentum negativo, RSI baixo",
     "bear-moderate": "Tendência de baixa moderada — sinais maioritariamente negativos",
     "bear-weak": "Ligeira pressão vendedora — sinal fraco",
     "sideways-weak": "Mercado lateral — sem tendência clara, alta incerteza",
