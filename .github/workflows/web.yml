@@ -1,0 +1,30 @@
+name: Web CI
+
+on:
+  push:
+    paths:
+      - "packages/web/**"
+      - "package.json"
+      - "bun.lock"
+      - "turbo.json"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "packages/web/**"
+      - "package.json"
+      - "bun.lock"
+      - "turbo.json"
+      - ".github/workflows/web.yml"
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.5"
+      - run: bun install --frozen-lockfile
+      - run: bun --cwd packages/web build
+      - run: bun test packages/web/src/api/lib/football-production-engine.test.ts
+      - run: bun --cwd packages/web lint
