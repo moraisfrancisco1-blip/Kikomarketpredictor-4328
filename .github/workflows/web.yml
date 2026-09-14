@@ -27,4 +27,5 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun --cwd packages/web build
       - run: bun test packages/web/src/api/lib/football-production-engine.test.ts
+      - run: bun test packages/web/src/api/lib/football-prediction-ledger.test.ts
       - run: bun --cwd packages/web lint
