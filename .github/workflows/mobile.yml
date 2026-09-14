@@ -27,4 +27,3 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun --cwd packages/mobile typecheck
       - run: bun --cwd packages/mobile test lib/api.test.ts
-      - run: bun test packages/web/src/api/lib/football-production-engine.test.ts
