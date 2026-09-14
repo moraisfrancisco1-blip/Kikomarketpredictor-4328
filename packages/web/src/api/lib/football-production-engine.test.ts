@@ -31,7 +31,7 @@ describe("production football engine", () => {
     const expectedSample = matches.filter((m) => new Date(m.date).getTime() < new Date(fixtureDate).getTime()).length;
     const prediction = predictFootballProduction(matches, "Alpha", "Beta", { fixtureDate });
     expect(prediction.sample).toBe(expectedSample);
-    expect(prediction.fixtureDate).toBe(fixtureDate);
+    expect(prediction.fixtureDate).toBe(new Date(fixtureDate).toISOString());
     expect(prediction.sample).toBeLessThan(matches.length);
     expect(prediction.sample).toBeGreaterThanOrEqual(120);
   });
