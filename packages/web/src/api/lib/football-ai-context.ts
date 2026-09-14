@@ -18,7 +18,7 @@ function recencyWeight(publishedAt?: string, now = Date.now()): number {
   return Math.exp(-hours / 48);
 }
 
-function boundedSignal(e: FootballEvidence, now: number): number {
+function boundedSignal(e: FootballEvidence, now = Date.now()): number {
   const impact = Number.isFinite(e.impact ?? NaN) ? Math.max(0, Math.min(1, e.impact!)) : 0;
   const confidence = Number.isFinite(e.confidence ?? NaN) ? Math.max(0, Math.min(1, e.confidence!)) : 0;
   const quality = Number.isFinite(e.sourceQuality ?? NaN) ? Math.max(0, Math.min(1, e.sourceQuality!)) : 0.5;
@@ -59,6 +59,6 @@ export function buildFootballAIContext(
   });
 }
 
-export function canUseAIContext(evidence: FootballEvidence[], minimumSources = 2): boolean {
-  return evidence.filter((e) => boundedSignal(e) !== 0).length >= minimumSources;
+export function canUseAIContext(evidence: FootballEvidence[], minimumSources = 2, now = Date.now()): boolean {
+  return evidence.filter((e) => boundedSignal(e, now) !== 0).length >= minimumSources;
 }
