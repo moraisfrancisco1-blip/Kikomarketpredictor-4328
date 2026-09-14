@@ -15,6 +15,8 @@ function makeMatches(count = 140): ProductionFootballMatch[] {
   return rows;
 }
 
+const LEAKAGE_TEST_FIXTURE_DATE = "2024-09-15";
+
 describe("production football engine", () => {
   test("rejects a fixture with fewer than 120 historical matches before its date", () => {
     const matches = makeMatches(140);
@@ -25,19 +27,21 @@ describe("production football engine", () => {
 
   test("uses only matches strictly before the fixture date", () => {
     const matches = makeMatches(140);
-    const fixtureDate = "2024-07-01";
+    const fixtureDate = LEAKAGE_TEST_FIXTURE_DATE;
     const expectedSample = matches.filter((m) => new Date(m.date).getTime() < new Date(fixtureDate).getTime()).length;
     const prediction = predictFootballProduction(matches, "Alpha", "Beta", { fixtureDate });
     expect(prediction.sample).toBe(expectedSample);
-    expect(prediction.fixtureDate).toBe("2024-07-01");
+    expect(prediction.fixtureDate).toBe(fixtureDate);
     expect(prediction.sample).toBeLessThan(matches.length);
+    expect(prediction.sample).toBeGreaterThanOrEqual(120);
   });
 
   test("is invariant to future matches after the fixture date", () => {
     const matches = makeMatches(160);
-    const fixtureDate = "2024-07-01";
-    const historical = matches.filter((m) => m.date < fixtureDate);
-    const future = matches.filter((m) => m.date >= fixtureDate);
+    const fixtureDate = LEAKAGE_TEST_FIXTURE_DATE;
+    const fixtureTs = new Date(fixtureDate).getTime();
+    const historical = matches.filter((m) => new Date(m.date).getTime() < fixtureTs);
+    const future = matches.filter((m) => new Date(m.date).getTime() >= fixtureTs);
     expect(historical.length).toBeGreaterThanOrEqual(120);
     expect(future.length).toBeGreaterThan(0);
 
@@ -54,7 +58,7 @@ describe("production football engine", () => {
   });
 
   test("returns a valid normalized three-way probability", () => {
-    const prediction = predictFootballProduction(makeMatches(160), "Alpha", "Beta", { fixtureDate: "2024-07-01" });
+    const prediction = predictFootballProduction(makeMatches(160), "Alpha", "Beta", { fixtureDate: LEAKAGE_TEST_FIXTURE_DATE });
     expect(prediction.probHome).toBeGreaterThanOrEqual(0);
     expect(prediction.probDraw).toBeGreaterThanOrEqual(0);
     expect(prediction.probAway).toBeGreaterThanOrEqual(0);
