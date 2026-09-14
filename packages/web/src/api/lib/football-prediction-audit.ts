@@ -12,10 +12,12 @@ export type AuditMatch = {
   away: string;
   probability: FootballProbability;
   sourceLastDate?: string;
+  outcome?: 0 | 1 | 2;
 };
 
 export type FootballAudit = {
   samples: number;
+  scoredSamples: number;
   sufficient: boolean;
   normalizedSamples: number;
   futureDataViolations: number;
@@ -48,10 +50,7 @@ function normalized(p: FootballProbability): FootballProbability {
  * Audit only. This function never changes a production forecast.
  * It is intended for walk-forward samples and historical validation reports.
  */
-export function auditFootballPredictions(
-  rows: AuditMatch[],
-  minimumSamples = 100,
-): FootballAudit {
+export function auditFootballPredictions(rows: AuditMatch[], minimumSamples = 100): FootballAudit {
   let futureDataViolations = 0;
   let invalidProbabilityRows = 0;
   let normalizedSamples = 0;
@@ -76,19 +75,23 @@ export function auditFootballPredictions(
 
     const q = normalized(p);
     maxWinnerProbability = Math.max(maxWinnerProbability, q.home, q.draw, q.away);
+
+    if (row.outcome != null && finiteProbability(p)) {
+      samples.push({ probHome: q.home, probDraw: q.draw, probAway: q.away, outcome: row.outcome });
+    }
   }
 
-  // Outcome fields are intentionally absent from AuditMatch: callers should
-  // convert genuine walk-forward outcomes into ThreeWaySample before scoring.
   const flags: string[] = [];
   if (rows.length < minimumSamples) flags.push("insufficient validation sample");
   if (futureDataViolations > 0) flags.push("future-data leakage detected");
   if (invalidProbabilityRows > 0) flags.push("invalid probability rows detected");
+  if (samples.length < minimumSamples) flags.push("insufficient scored sample");
   if (maxWinnerProbability >= 0.85) flags.push("extreme probability concentration");
 
   return {
     samples: rows.length,
-    sufficient: rows.length >= minimumSamples,
+    scoredSamples: samples.length,
+    sufficient: rows.length >= minimumSamples && samples.length >= minimumSamples,
     normalizedSamples,
     futureDataViolations,
     invalidProbabilityRows,
