@@ -25,5 +25,5 @@ jobs:
         with:
           bun-version: "1.3.5"
       - run: bun install --frozen-lockfile
-      - run: bun test packages/mobile/lib/api.test.ts
       - run: bun --cwd packages/mobile typecheck
+      - run: bun --cwd packages/mobile test lib/api.test.ts
