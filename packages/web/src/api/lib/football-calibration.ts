@@ -1,4 +1,4 @@
-import { reliabilityBuckets, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation";
+import { multiclassBrier, multiclassLogLoss, reliabilityBuckets, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation";
 
 export type FootballCalibrationReport = {
   sample: number;
@@ -64,14 +64,8 @@ export function buildFootballCalibrationReport(samples: ThreeWaySample[], minimu
   return {
     sample: samples.length,
     sufficient: samples.length >= minimumSamples,
-    brier: samples.length ?
-      samples.reduce((sum, s) => {
-        const yH = s.outcome === 0 ? 1 : 0;
-        const yD = s.outcome === 1 ? 1 : 0;
-        const yA = s.outcome === 2 ? 1 : 0;
-        return sum + (s.probHome - yH) ** 2 + (s.probDraw - yD) ** 2 + (s.probAway - yA) ** 2;
-      }, 0) / samples.length : null,
-    logLoss: null,
+    brier: multiclassBrier(samples),
+    logLoss: multiclassLogLoss(samples),
     baseRateHome: rates.home,
     baseRateDraw: rates.draw,
     baseRateAway: rates.away,
