@@ -28,7 +28,7 @@ describe("mobile API core", () => {
       new Response(JSON.stringify({ status: "ok" }), {
         status: 200,
         headers: { "content-type": "application/json" },
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
 
     await expect(
       apiFetchFromBase<{ status: string }>("https://example.com", "/api/health"),
@@ -40,7 +40,7 @@ describe("mobile API core", () => {
       new Response(JSON.stringify({ error: "backend unavailable" }), {
         status: 503,
         headers: { "content-type": "application/json" },
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
 
     await expect(
       apiFetchFromBase("https://example.com", "/api/health"),
@@ -48,7 +48,7 @@ describe("mobile API core", () => {
   });
 
   test("falls back to HTTP status when API error body is not JSON", async () => {
-    globalThis.fetch = (async () => new Response("service unavailable", { status: 503 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response("service unavailable", { status: 503 })) as unknown as typeof fetch;
 
     await expect(
       apiFetchFromBase("https://example.com", "/api/health"),
@@ -63,7 +63,7 @@ describe("mobile API core", () => {
           error.name = "AbortError";
           reject(error);
         });
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
 
     await expect(
       apiFetchFromBase("https://example.com", "/api/health", {}, 10),
