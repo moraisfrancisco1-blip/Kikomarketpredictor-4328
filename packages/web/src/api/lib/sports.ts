@@ -1,6 +1,6 @@
 export * from "./sports-legacy";
 
-import { predictFootballProduction, type ProductionFootballOptions } from "./football-production-engine";
+import { predictFootballProduction } from "./football-production-engine";
 import type { PredictExtOpts as LegacyPredictExtOpts } from "./sports-legacy";
 import type { Match } from "./sports-legacy";
 import type { FootballContextAdjustment } from "./football-model-contract";
