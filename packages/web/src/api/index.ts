@@ -9,6 +9,8 @@ import {
   fetchFixtures,
   selectUpcoming,
 } from "./lib/sports";
+import { recordFootballPrediction, reportFootballLedger, resolveFootballPrediction } from "./lib/football-prediction-ledger";
+import { getFootballPrediction, listFootballPredictions, saveFootballPrediction } from "./lib/football-prediction-ledger-store";
 
 const app = new Hono()
   .basePath("api")
@@ -51,6 +53,43 @@ app.get("/sports/football/predict", async (c) => {
   }
 });
 
+app.post("/sports/football/predictions/track", async (c) => {
+  try {
+    const body = await c.req.json();
+    const row = recordFootballPrediction(body);
+    saveFootballPrediction(row);
+    return c.json({ prediction: row }, 201);
+  } catch (e: any) {
+    return c.json({ error: e?.message ?? "invalid prediction" }, 400);
+  }
+});
+
+app.post("/sports/football/predictions/:predictionId/resolve", async (c) => {
+  const id = c.req.param("predictionId");
+  const existing = getFootballPrediction(id);
+  if (!existing) return c.json({ error: "prediction not found" }, 404);
+  try {
+    const body = await c.req.json();
+    const outcome = Number(body?.outcome);
+    if (![0, 1, 2].includes(outcome)) return c.json({ error: "outcome must be 0, 1, or 2" }, 400);
+    const row = resolveFootballPrediction(existing, outcome as 0 | 1 | 2);
+    saveFootballPrediction(row);
+    return c.json({ prediction: row }, 200);
+  } catch (e: any) {
+    return c.json({ error: e?.message ?? "invalid resolution" }, 400);
+  }
+});
+
+app.get("/sports/football/predictions/report", (c) => {
+  const minimum = Math.max(1, Number.parseInt(c.req.query("minimumResolved") ?? "100", 10) || 100);
+  return c.json(reportFootballLedger(listFootballPredictions(), minimum), 200);
+});
+
+app.get("/sports/football/predictions/:predictionId", (c) => {
+  const row = getFootballPrediction(c.req.param("predictionId"));
+  return row ? c.json({ prediction: row }, 200) : c.json({ error: "prediction not found" }, 404);
+});
+
 app.get("/sports/football/fixtures", async (c) => {
   const code = (c.req.query("league") ?? "E0").toUpperCase();
   const today = c.req.query("today") || new Date().toISOString().slice(0, 10);
@@ -73,16 +112,7 @@ app.get("/sports/football/fixtures", async (c) => {
       } else {
         error = "team not mapped";
       }
-      return {
-        date: f.date,
-        time: f.time,
-        round: f.round,
-        home: f.home ?? f.homeOpen,
-        away: f.away ?? f.awayOpen,
-        played: f.played,
-        prediction,
-        error,
-      };
+      return { date: f.date, time: f.time, round: f.round, home: f.home ?? f.homeOpen, away: f.away ?? f.awayOpen, played: f.played, prediction, error };
     });
     return c.json({ league: leagueName, season, offseason, count: games.length, games }, 200);
   } catch (e: any) {
@@ -90,8 +120,6 @@ app.get("/sports/football/fixtures", async (c) => {
   }
 });
 
-// Preserve every existing endpoint and handler not explicitly overridden above.
 app.all("*", (c) => legacyApp.fetch(c.req.raw, c.env, c.executionCtx));
-
 export type AppType = typeof app;
 export default app;
