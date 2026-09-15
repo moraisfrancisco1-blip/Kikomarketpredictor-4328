@@ -14,9 +14,9 @@ function samples(n: number, p = 0.5): ThreeWaySample[] {
 function clearlyBetterSamples(n: number): { model: ThreeWaySample[]; baseline: ThreeWaySample[] } {
   return {
     model: Array.from({ length: n }, (_, i) => ({
-      probHome: i % 2 === 0 ? 0.9 : 0.05,
-      probDraw: 0.05,
-      probAway: i % 2 === 0 ? 0.05 : 0.9,
+      probHome: i % 2 === 0 ? 0.84 : 0.08,
+      probDraw: 0.08,
+      probAway: i % 2 === 0 ? 0.08 : 0.84,
       outcome: (i % 2 === 0 ? 0 : 2) as 0 | 1 | 2,
     })),
     baseline: Array.from({ length: n }, (_, i) => ({
