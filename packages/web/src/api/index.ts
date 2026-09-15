@@ -4,10 +4,38 @@ import legacyApp from "./index-legacy";
 import { FOOTBALL_LEAGUES, fetchFootball, predictFootball, listTeams, fetchFixtures, selectUpcoming } from "./lib/sports";
 import { recordFootballPrediction, reportFootballLedger, resolveFootballPrediction } from "./lib/football-prediction-ledger";
 import { getFootballPrediction, listFootballPredictions, saveFootballPrediction } from "./lib/football-prediction-ledger-store";
+import { getFootballPredictionDb, listFootballPredictionsDb, saveFootballPredictionDb } from "./lib/football-prediction-ledger-db";
 import { evaluateFootballOos } from "./lib/football-oos-validation";
 
 const app = new Hono().basePath("api").use(cors({ origin: (origin) => origin ?? "*", credentials: true, exposeHeaders: ["set-auth-token"] }));
 const parseMultiplier = (value: string | undefined, def = 1) => { const n = parseFloat(value ?? ""); return Number.isFinite(n) ? Math.max(0.3, Math.min(1.8, n)) : def; };
+
+async function saveLedgerRow(row: Awaited<ReturnType<typeof recordFootballPrediction>>) {
+  try {
+    return await saveFootballPredictionDb(row);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("DATABASE_URL is required")) return saveFootballPrediction(row);
+    throw error;
+  }
+}
+
+async function getLedgerRow(predictionId: string) {
+  try {
+    return await getFootballPredictionDb(predictionId);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("DATABASE_URL is required")) return getFootballPrediction(predictionId);
+    throw error;
+  }
+}
+
+async function listLedgerRows() {
+  try {
+    return await listFootballPredictionsDb();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("DATABASE_URL is required")) return listFootballPredictions();
+    throw error;
+  }
+}
 
 app.get("/sports/football/predict", async (c) => {
   const code = (c.req.query("league") ?? "E0").toUpperCase(), home = c.req.query("home") ?? "", away = c.req.query("away") ?? "", fixtureDate = c.req.query("fixtureDate") ?? "";
@@ -27,19 +55,24 @@ app.get("/sports/football/predict", async (c) => {
 });
 
 app.post("/sports/football/predictions/track", async (c) => {
-  try { const row = recordFootballPrediction(await c.req.json()); saveFootballPrediction(row); return c.json({ prediction: row }, 201); }
+  try { const row = recordFootballPrediction(await c.req.json()); const saved = await saveLedgerRow(row); return c.json({ prediction: saved }, 201); }
   catch (e: any) { return c.json({ error: e?.message ?? "invalid prediction" }, 400); }
 });
 
 app.post("/sports/football/predictions/:predictionId/resolve", async (c) => {
-  const id = c.req.param("predictionId"), existing = getFootballPrediction(id);
-  if (!existing) return c.json({ error: "prediction not found" }, 404);
-  try { const outcome = Number((await c.req.json())?.outcome); if (![0, 1, 2].includes(outcome)) return c.json({ error: "outcome must be 0, 1, or 2" }, 400); const row = resolveFootballPrediction(existing, outcome as 0 | 1 | 2); saveFootballPrediction(row); return c.json({ prediction: row }, 200); }
-  catch (e: any) { return c.json({ error: e?.message ?? "invalid resolution" }, 400); }
+  const id = c.req.param("predictionId");
+  try {
+    const existing = await getLedgerRow(id);
+    if (!existing) return c.json({ error: "prediction not found" }, 404);
+    const outcome = Number((await c.req.json())?.outcome);
+    if (![0, 1, 2].includes(outcome)) return c.json({ error: "outcome must be 0, 1, or 2" }, 400);
+    const row = resolveFootballPrediction(existing, outcome as 0 | 1 | 2);
+    return c.json({ prediction: await saveLedgerRow(row) }, 200);
+  } catch (e: any) { return c.json({ error: e?.message ?? "invalid resolution" }, 400); }
 });
 
-app.get("/sports/football/predictions/report", (c) => { const minimum = Math.max(1, Number.parseInt(c.req.query("minimumResolved") ?? "100", 10) || 100); return c.json(reportFootballLedger(listFootballPredictions(), minimum), 200); });
-app.get("/sports/football/predictions/:predictionId", (c) => { const row = getFootballPrediction(c.req.param("predictionId")); return row ? c.json({ prediction: row }, 200) : c.json({ error: "prediction not found" }, 404); });
+app.get("/sports/football/predictions/report", async (c) => { const minimum = Math.max(1, Number.parseInt(c.req.query("minimumResolved") ?? "100", 10) || 100); try { return c.json(reportFootballLedger(await listLedgerRows(), minimum), 200); } catch (e: any) { return c.json({ error: e?.message ?? "ledger report failed" }, 502); } });
+app.get("/sports/football/predictions/:predictionId", async (c) => { try { const row = await getLedgerRow(c.req.param("predictionId")); return row ? c.json({ prediction: row }, 200) : c.json({ error: "prediction not found" }, 404); } catch (e: any) { return c.json({ error: e?.message ?? "ledger lookup failed" }, 502); } });
 
 app.get("/sports/football/oos", async (c) => {
   const code = (c.req.query("league") ?? "E0").toUpperCase();
