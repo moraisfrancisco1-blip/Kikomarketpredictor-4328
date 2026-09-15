@@ -14,35 +14,46 @@ export type FootballOosResult = {
 
 const outcomeOf = (m: FootballMatch): 0 | 1 | 2 => m.homeGoals > m.awayGoals ? 0 : m.homeGoals === m.awayGoals ? 1 : 2;
 
-const baseline = (matches: FootballMatch[]): ThreeWaySample[] => {
-  if (!matches.length) return [];
+function baseRate(history: FootballMatch[]): [number, number, number] {
+  if (!history.length) return [1 / 3, 1 / 3, 1 / 3];
   const counts = [0, 0, 0];
-  for (const m of matches) counts[outcomeOf(m)]++;
-  const total = matches.length;
-  const probs = counts.map((n) => n / total) as [number, number, number];
-  return matches.map((m) => ({ probHome: probs[0], probDraw: probs[1], probAway: probs[2], outcome: outcomeOf(m) }));
-};
+  for (const m of history) counts[outcomeOf(m)]++;
+  const total = history.length;
+  return [counts[0] / total, counts[1] / total, counts[2] / total];
+}
 
+/**
+ * Strict chronological OOS evaluation.
+ * Every holdout fixture is predicted using only matches strictly before it.
+ * The baseline is also computed from that pre-fixture history, never from
+ * holdout outcomes, so evaluation cannot leak the answers into the baseline.
+ */
 export function evaluateFootballOos(league: string, matches: FootballMatch[], options: { minTrain?: number; minHoldout?: number } = {}): FootballOosResult {
   const minTrain = options.minTrain ?? 120;
   const minHoldout = options.minHoldout ?? 30;
   const ordered = [...matches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   if (ordered.length < minTrain + minHoldout) return { evaluated: 0, brier: null, logLoss: null, accuracy: null, baselineBrier: null, baselineLogLoss: null, warnings: ["not enough chronological matches for OOS evaluation"] };
 
-  const holdout = ordered.slice(-minHoldout);
-  const training = ordered.slice(0, -minHoldout);
+  const start = Math.max(minTrain, ordered.length - minHoldout);
   const samples: ThreeWaySample[] = [];
-  for (const fixture of holdout) {
+  const baselineSamples: ThreeWaySample[] = [];
+
+  for (let i = start; i < ordered.length; i++) {
+    const fixture = ordered[i];
+    const history = ordered.slice(0, i);
+    if (history.length < minTrain) continue;
     try {
-      const p = predictFootball(league, training, fixture.home, fixture.away, { fixtureDate: fixture.date });
+      const p = predictFootball(league, history, fixture.home, fixture.away, { fixtureDate: fixture.date });
       samples.push({ probHome: p.probHome, probDraw: p.probDraw, probAway: p.probAway, outcome: outcomeOf(fixture) });
+      const base = baseRate(history);
+      baselineSamples.push({ probHome: base[0], probDraw: base[1], probAway: base[2], outcome: outcomeOf(fixture) });
     } catch {
       // Fixtures without sufficient pre-fixture history are intentionally skipped.
     }
   }
-  const base = baseline(holdout);
+
   const brier = multiclassBrier(samples), logLoss = multiclassLogLoss(samples);
-  const baselineBrier = multiclassBrier(base), baselineLogLoss = multiclassLogLoss(base);
+  const baselineBrier = multiclassBrier(baselineSamples), baselineLogLoss = multiclassLogLoss(baselineSamples);
   let correct = 0;
   for (const s of samples) {
     const predicted = s.probHome >= s.probDraw && s.probHome >= s.probAway ? 0 : s.probDraw >= s.probAway ? 1 : 2;
