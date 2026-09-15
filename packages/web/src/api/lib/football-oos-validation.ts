@@ -1,6 +1,6 @@
 import type { FootballMatch } from "./dixoncoles";
 import { predictFootball } from "./sports";
-import { multiclassBrier, multiclassLogLoss, topProbabilityCalibration, type ThreeWaySample } from "./probability-validation";
+import { multiclassBrier, multiclassLogLoss, topProbabilityCalibration, isFiniteThreeWaySample, type ThreeWaySample } from "./probability-validation";
 import { assessFootballProbabilities, type FootballProbabilityGuard } from "./football-probability-guard";
 
 export type FootballOosResult = { evaluated: number; brier: number | null; logLoss: number | null; accuracy: number | null; baselineBrier: number | null; baselineLogLoss: number | null; calibrationEce: number | null; calibrationMce: number | null; probabilityGuard: FootballProbabilityGuard; warnings: string[] };
@@ -16,12 +16,15 @@ export function evaluateFootballOos(league: string, matches: FootballMatch[], op
     return { evaluated: 0, brier: null, logLoss: null, accuracy: null, baselineBrier: null, baselineLogLoss: null, calibrationEce: null, calibrationMce: null, probabilityGuard, warnings: ["not enough chronological matches for OOS evaluation"] };
   }
   const samples: ThreeWaySample[] = [], baselineSamples: ThreeWaySample[] = [];
+  let invalidPredictions = 0;
   for (let i = ordered.length - minHoldout; i < ordered.length; i++) {
     const fixture = ordered[i], history = ordered.slice(0, i);
     if (history.length < minTrain) continue;
     try {
       const p = predictFootball(league, history, fixture.home, fixture.away, { fixtureDate: fixture.date }), outcome = outcomeOf(fixture);
-      samples.push({ probHome: p.probHome, probDraw: p.probDraw, probAway: p.probAway, outcome });
+      const sample: ThreeWaySample = { probHome: p.probHome, probDraw: p.probDraw, probAway: p.probAway, outcome };
+      if (!isFiniteThreeWaySample(sample)) { invalidPredictions++; continue; }
+      samples.push(sample);
       const base = baseRate(history); baselineSamples.push({ probHome: base[0], probDraw: base[1], probAway: base[2], outcome });
     } catch { /* unevaluable fixture */ }
   }
@@ -30,6 +33,7 @@ export function evaluateFootballOos(league: string, matches: FootballMatch[], op
   let correct = 0; for (const s of samples) { const predicted = s.probHome >= s.probDraw && s.probHome >= s.probAway ? 0 : s.probDraw >= s.probAway ? 1 : 2; if (predicted === s.outcome) correct++; }
   const warnings: string[] = [];
   if (samples.length < minHoldout) warnings.push(`only ${samples.length} holdout predictions were evaluable`);
+  if (invalidPredictions > 0) warnings.push(`${invalidPredictions} OOS predictions had invalid probability vectors and were excluded`);
   if (brier != null && baselineBrier != null && brier >= baselineBrier) warnings.push("model Brier score does not beat the chronological baseline");
   if (logLoss != null && baselineLogLoss != null && logLoss >= baselineLogLoss) warnings.push("model Log Loss does not beat the chronological baseline");
   if (calibration.ece != null && calibration.ece > 0.05) warnings.push("top-probability calibration error exceeds 5%");
