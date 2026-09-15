@@ -26,6 +26,9 @@ function teamForm(matches: ProductionFootballMatch[], team: string, n = 5): stri
 
 function buildValidation(samples: NonNullable<ReturnType<typeof backtestWithSamples>>, minimum = 100): ProductionFootballValidation {
   const rows: ThreeWaySample[] = samples.map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
+  // This diagnostic baseline is deliberately marked as descriptive: the
+  // backtest sample type does not expose each prediction's pre-match history.
+  // The strict OOS evaluator provides the non-leaky expanding-history baseline.
   const homeRate = rows.length ? rows.filter((s) => s.outcome === 0).length / rows.length : 1 / 3;
   const drawRate = rows.length ? rows.filter((s) => s.outcome === 1).length / rows.length : 1 / 3;
   const awayRate = rows.length ? rows.filter((s) => s.outcome === 2).length / rows.length : 1 / 3;
@@ -35,8 +38,8 @@ function buildValidation(samples: NonNullable<ReturnType<typeof backtestWithSamp
   const warnings: string[] = [];
   if (rows.length < minimum) warnings.push("insufficient out-of-sample validation sample");
   if (maxWinnerProbability >= 0.85) warnings.push("high probability concentration");
-  if (brier != null && baselineBrier != null && brier >= baselineBrier) warnings.push("Brier does not beat base-rate baseline");
-  if (logLoss != null && baselineLogLoss != null && logLoss >= baselineLogLoss) warnings.push("log loss does not beat base-rate baseline");
+  if (brier != null && baselineBrier != null && brier >= baselineBrier) warnings.push("Brier does not beat descriptive holdout base-rate");
+  if (logLoss != null && baselineLogLoss != null && logLoss >= baselineLogLoss) warnings.push("log loss does not beat descriptive holdout base-rate");
   return { sample: rows.length, brier, logLoss, baselineBrier, baselineLogLoss, maxWinnerProbability, sufficient: rows.length >= minimum, warnings };
 }
 
@@ -60,9 +63,10 @@ function getValidationSamples(matches: ProductionFootballMatch[], halfLife: numb
 
 /**
  * Production-safe football engine. The chronological validation design is:
- * 1) first 80% of the as-of history is the tuning/calibration period;
- * 2) the final 20% is a sealed holdout used only for OOS measurement;
- * 3) the holdout is never used to tune the half-life or calibrate the live prediction.
+ * 1) first 60% of the as-of history is used for hyperparameter selection;
+ * 2) the next 20% is a calibration window;
+ * 3) the final 20% is a sealed holdout used only for OOS measurement;
+ * 4) no holdout outcome is used to tune or calibrate the live prediction.
  * xG is display-only until historical per-match xG has passed OOS validation.
  */
 export function predictFootballProduction(matches: ProductionFootballMatch[], home: string, away: string, options: ProductionFootballOptions): ProductionFootballPrediction {
@@ -74,7 +78,7 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
   if (asOfMatches.length < 120) throw new Error("not enough historical matches available before fixture date");
 
   const dc = asDC(asOfMatches);
-  const tuned = tuneHalfLife(dc, undefined, { tuningFraction: 0.8, refitEvery: 25 });
+  const tuned = tuneHalfLife(dc, undefined, { tuningFraction: 0.6, refitEvery: 25 });
   const model = fitDixonColes(dc, { halfLifeDays: tuned.halfLifeDays });
   if (model.att[home] == null || model.att[away] == null) throw new Error("team not found in historical sample");
 
@@ -83,8 +87,8 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
   const restAwayDays = restDaysAt(model, away, fixtureDate);
   const raw = predictMatch(model, home, away, { neutral: options.neutral, restHomeDays, restAwayDays, homeAttackMult: context.homeAttackMult, homeDefMult: context.homeDefMult, awayAttackMult: context.awayAttackMult, awayDefMult: context.awayDefMult, motivationFactor: context.motivationFactor });
 
-  const tuningEnd = Math.max(1, Math.floor(dc.length * 0.8));
-  const calibrationSamples = getValidationSamples(asOfMatches.slice(0, tuningEnd), tuned.halfLifeDays, 0.25).map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
+  const calibrationEnd = Math.max(1, Math.floor(dc.length * 0.8));
+  const calibrationSamples = getValidationSamples(asOfMatches.slice(0, calibrationEnd), tuned.halfLifeDays, 0.25).map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
   const calibrated = calibrateWithHistory({ home: raw.probHome, draw: raw.probDraw, away: raw.probAway }, calibrationSamples);
 
   const holdoutSamples = getValidationSamples(asOfMatches, tuned.halfLifeDays, 0.2);
