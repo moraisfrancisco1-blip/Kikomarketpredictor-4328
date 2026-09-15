@@ -1,5 +1,5 @@
 import type { FootballMatch } from "./dixoncoles";
-import { predictFootballProduction } from "./football-production-engine";
+import { predictFootball } from "./sports";
 import { multiclassBrier, multiclassLogLoss, type ThreeWaySample } from "./probability-validation";
 
 export type FootballOosResult = {
@@ -12,8 +12,7 @@ export type FootballOosResult = {
   warnings: string[];
 };
 
-const outcomeOf = (m: FootballMatch): 0 | 1 | 2 =>
-  m.homeGoals > m.awayGoals ? 0 : m.homeGoals === m.awayGoals ? 1 : 2;
+const outcomeOf = (m: FootballMatch): 0 | 1 | 2 => m.homeGoals > m.awayGoals ? 0 : m.homeGoals === m.awayGoals ? 1 : 2;
 
 const baseline = (matches: FootballMatch[]): ThreeWaySample[] => {
   if (!matches.length) return [];
@@ -24,34 +23,26 @@ const baseline = (matches: FootballMatch[]): ThreeWaySample[] => {
   return matches.map((m) => ({ probHome: probs[0], probDraw: probs[1], probAway: probs[2], outcome: outcomeOf(m) }));
 };
 
-export function evaluateFootballOos(
-  league: string,
-  matches: FootballMatch[],
-  options: { minTrain?: number; minHoldout?: number } = {},
-): FootballOosResult {
+export function evaluateFootballOos(league: string, matches: FootballMatch[], options: { minTrain?: number; minHoldout?: number } = {}): FootballOosResult {
   const minTrain = options.minTrain ?? 120;
   const minHoldout = options.minHoldout ?? 30;
   const ordered = [...matches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  if (ordered.length < minTrain + minHoldout) {
-    return { evaluated: 0, brier: null, logLoss: null, accuracy: null, baselineBrier: null, baselineLogLoss: null, warnings: ["not enough chronological matches for OOS evaluation"] };
-  }
+  if (ordered.length < minTrain + minHoldout) return { evaluated: 0, brier: null, logLoss: null, accuracy: null, baselineBrier: null, baselineLogLoss: null, warnings: ["not enough chronological matches for OOS evaluation"] };
 
   const holdout = ordered.slice(-minHoldout);
   const training = ordered.slice(0, -minHoldout);
   const samples: ThreeWaySample[] = [];
   for (const fixture of holdout) {
     try {
-      const p = predictFootballProduction(league, training, fixture.home, fixture.away, { fixtureDate: fixture.date });
+      const p = predictFootball(league, training, fixture.home, fixture.away, { fixtureDate: fixture.date });
       samples.push({ probHome: p.probHome, probDraw: p.probDraw, probAway: p.probAway, outcome: outcomeOf(fixture) });
     } catch {
-      // A fixture without sufficient pre-fixture history is intentionally skipped.
+      // Fixtures without sufficient pre-fixture history are intentionally skipped.
     }
   }
   const base = baseline(holdout);
-  const brier = multiclassBrier(samples);
-  const logLoss = multiclassLogLoss(samples);
-  const baselineBrier = multiclassBrier(base);
-  const baselineLogLoss = multiclassLogLoss(base);
+  const brier = multiclassBrier(samples), logLoss = multiclassLogLoss(samples);
+  const baselineBrier = multiclassBrier(base), baselineLogLoss = multiclassLogLoss(base);
   let correct = 0;
   for (const s of samples) {
     const predicted = s.probHome >= s.probDraw && s.probHome >= s.probAway ? 0 : s.probDraw >= s.probAway ? 1 : 2;
