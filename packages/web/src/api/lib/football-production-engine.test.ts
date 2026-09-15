@@ -57,6 +57,15 @@ describe("production football engine", () => {
     expect(withAlteredFuture.expAwayGoals).toBeCloseTo(baseline.expAwayGoals, 10);
   });
 
+  test("keeps final holdout separate from tuning and flags small OOS samples", () => {
+    const matches = makeMatches(180);
+    const fixtureDate = new Date(Date.UTC(2024, 11, 31)).toISOString();
+    const prediction = predictFootballProduction(matches, "Alpha", "Beta", { fixtureDate });
+    expect(prediction.validation.sample).toBeGreaterThan(0);
+    expect(prediction.validation.sample).toBeLessThan(prediction.sample * 0.3);
+    expect(prediction.validation.warnings).toContain("insufficient out-of-sample validation sample");
+  });
+
   test("returns a valid normalized three-way probability", () => {
     const prediction = predictFootballProduction(makeMatches(160), "Alpha", "Beta", { fixtureDate: LEAKAGE_TEST_FIXTURE_DATE });
     expect(prediction.probHome).toBeGreaterThanOrEqual(0);
