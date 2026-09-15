@@ -1,6 +1,6 @@
 export * from "./sports-legacy";
 
-import { predictFootballProduction, type ProductionFootballOptions } from "./football-production-engine";
+import { predictFootballProduction } from "./football-production-engine";
 import type { PredictExtOpts as LegacyPredictExtOpts } from "./sports-legacy";
 import type { Match } from "./sports-legacy";
 import type { FootballContextAdjustment } from "./football-model-contract";
@@ -15,9 +15,8 @@ export type PredictExtOpts = LegacyPredictExtOpts & {
 /**
  * Compatibility facade. Existing consumers keep the same function name, but
  * the prediction path is now the leakage-safe production engine.
- * When no fixture date is supplied (generic team-v-team analysis), we use the
- * latest historical match date as an explicit as-of date and disable future
- * rest assumptions rather than silently using today's date.
+ * A fixture/as-of date is mandatory so callers cannot accidentally fit on
+ * matches that occur after the prediction timestamp.
  */
 export function predictFootball(
   leagueName: string,
@@ -26,12 +25,12 @@ export function predictFootball(
   away: string,
   extOpts: PredictExtOpts = {},
 ) {
-  const latestDate = [...matches].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.date;
-  const fixtureDate = extOpts.fixtureDate ?? latestDate;
-  if (!fixtureDate) throw new Error("fixture date required: no historical dates available");
+  if (extOpts.fixtureDate == null) {
+    throw new Error("fixture date required: predictions must provide an explicit as-of date");
+  }
 
   const prediction = predictFootballProduction(matches, home, away, {
-    fixtureDate,
+    fixtureDate: extOpts.fixtureDate,
     neutral: extOpts.neutral,
     context: extOpts.context,
     xg: extOpts.xg,

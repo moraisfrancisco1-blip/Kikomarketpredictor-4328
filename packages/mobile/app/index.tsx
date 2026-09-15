@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -35,6 +35,7 @@ type FootballGame = {
   error?: string | null;
 };
 type FootballResponse = { league: string; season?: string; offseason?: boolean; games: FootballGame[] };
+type MarketResult = { symbol: string; m: MarketResponse; p: PredictionResponse };
 
 const WATCH_SYMBOLS = ["AAPL", "MSFT", "NVDA", "TSLA"];
 
@@ -46,7 +47,7 @@ function money(value?: number) {
   return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(2)}` : "—";
 }
 
-function Card({ children, style }: { children: React.ReactNode; style?: any }) {
+function Card({ children, style }: { children: ReactNode; style?: any }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
@@ -78,7 +79,7 @@ export default function Index() {
 
     const [healthResult, ...dataResults] = await Promise.allSettled([
       checkApi(),
-      ...WATCH_SYMBOLS.map(async (symbol) => {
+      ...WATCH_SYMBOLS.map(async (symbol): Promise<MarketResult> => {
         const [m, p] = await Promise.all([
           apiFetch<MarketResponse>(`/api/markets?symbol=${encodeURIComponent(symbol)}`),
           apiFetch<PredictionResponse>(`/api/predict?symbol=${encodeURIComponent(symbol)}`),
@@ -98,7 +99,7 @@ export default function Index() {
     const nextMarkets: Record<string, MarketResponse> = {};
     const nextPredictions: Record<string, PredictionResponse> = {};
     dataResults.slice(0, WATCH_SYMBOLS.length).forEach((result) => {
-      if (result.status === "fulfilled") {
+      if (result.status === "fulfilled" && "symbol" in result.value) {
         nextMarkets[result.value.symbol] = result.value.m;
         nextPredictions[result.value.symbol] = result.value.p;
       }
@@ -107,7 +108,9 @@ export default function Index() {
     setPredictions(nextPredictions);
 
     const footballResult = dataResults[WATCH_SYMBOLS.length];
-    if (footballResult?.status === "fulfilled") setFootball(footballResult.value);
+    if (footballResult?.status === "fulfilled" && "games" in footballResult.value) {
+      setFootball(footballResult.value);
+    }
     setLoading(false);
   }, []);
 
@@ -275,6 +278,7 @@ const styles = StyleSheet.create({
   fixtureProb: { color: "#fff", fontWeight: "800", alignSelf: "center" },
   muted: { color: "#71839b", fontSize: 11 },
   metric: { flex: 1 },
+  metricsRow: { flexDirection: "row", gap: 12, marginTop: 16 },
   metricLabel: { color: "#70839d", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6 },
   metricValue: { color: "#fff", fontSize: 15, fontWeight: "800", marginTop: 4 },
   metricDetail: { color: "#667991", fontSize: 9, marginTop: 4 },
