@@ -13,9 +13,12 @@ function match(date: string, i: number): FootballMatch {
 }
 
 describe("football chronological OOS validation", () => {
-  test("rejects insufficient history", () => {
+  test("rejects insufficient history and blocks probability publication", () => {
     const matches = Array.from({ length: 130 }, (_, i) => match(`2024-01-${String(i + 1).padStart(2, "0")}`, i));
-    expect(evaluateFootballOos("Test League", matches, { minTrain: 120, minHoldout: 30 }).evaluated).toBe(0);
+    const result = evaluateFootballOos("Test League", matches, { minTrain: 120, minHoldout: 30 });
+    expect(result.evaluated).toBe(0);
+    expect(result.probabilityGuard.band).toBe("insufficient-data");
+    expect(result.probabilityGuard.publishable).toBe(false);
   });
 
   test("evaluates only a chronological holdout", () => {
@@ -27,5 +30,6 @@ describe("football chronological OOS validation", () => {
     expect(result.evaluated).toBeGreaterThanOrEqual(0);
     expect(result.brier === null || Number.isFinite(result.brier)).toBe(true);
     expect(result.logLoss === null || Number.isFinite(result.logLoss)).toBe(true);
+    expect(result.probabilityGuard).toBeDefined();
   });
 });
