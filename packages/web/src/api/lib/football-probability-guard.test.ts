@@ -14,16 +14,17 @@ function samples(n: number, p = 0.5): ThreeWaySample[] {
 function clearlyBetterSamples(n: number): { model: ThreeWaySample[]; baseline: ThreeWaySample[] } {
   return {
     model: Array.from({ length: n }, (_, i) => ({
-      probHome: i % 2 === 0 ? 0.84 : 0.08,
-      probDraw: 0.08,
-      probAway: i % 2 === 0 ? 0.08 : 0.84,
-      outcome: (i % 2 === 0 ? 0 : 2) as 0 | 1 | 2,
+      probHome: 0.8,
+      probDraw: 0.1,
+      probAway: 0.1,
+      // 80% of the 0.8-confidence predictions are correct, giving a calibrated test fixture.
+      outcome: (i % 5 === 0 ? 2 : 0) as 0 | 1 | 2,
     })),
     baseline: Array.from({ length: n }, (_, i) => ({
       probHome: 1 / 3,
       probDraw: 1 / 3,
       probAway: 1 / 3,
-      outcome: (i % 2 === 0 ? 0 : 2) as 0 | 1 | 2,
+      outcome: (i % 5 === 0 ? 2 : 0) as 0 | 1 | 2,
     })),
   };
 }
