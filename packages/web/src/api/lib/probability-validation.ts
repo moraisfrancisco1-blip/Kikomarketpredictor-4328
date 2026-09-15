@@ -17,6 +17,12 @@ export type CalibrationBucket = {
   observedRate: number;
 };
 
+export type TopProbabilityCalibration = {
+  ece: number | null;
+  mce: number | null;
+  buckets: CalibrationBucket[];
+};
+
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 function normalize3(a: number, b: number, c: number): [number, number, number] {
@@ -85,6 +91,38 @@ export function reliabilityBuckets(
     meanProbability: b.rows.length ? b.rows.reduce((sum, r) => sum + r.p, 0) / b.rows.length : 0,
     observedRate: b.rows.length ? b.rows.filter((r) => r.hit).length / b.rows.length : 0,
   }));
+}
+
+/**
+ * Calibration of the probability attached to the model's most likely class.
+ * ECE is the sample-weighted absolute gap between predicted confidence and
+ * observed hit rate; MCE is the largest bucket gap.
+ */
+export function topProbabilityCalibration(samples: ThreeWaySample[], bucketCount = 10): TopProbabilityCalibration {
+  if (!samples.length) return { ece: null, mce: null, buckets: [] };
+  const n = Math.max(2, Math.floor(bucketCount));
+  const buckets = Array.from({ length: n }, (_, i) => ({
+    lower: i / n,
+    upper: (i + 1) / n,
+    rows: [] as { p: number; hit: boolean }[],
+  }));
+  for (const s of samples) {
+    const probs = [clamp01(s.probHome), clamp01(s.probDraw), clamp01(s.probAway)];
+    const index = probs[0] >= probs[1] && probs[0] >= probs[2] ? 0 : probs[1] >= probs[2] ? 1 : 2;
+    const p = probs[index];
+    buckets[Math.min(n - 1, Math.floor(p * n))].rows.push({ p, hit: s.outcome === index });
+  }
+  const normalized = buckets.map((b) => ({
+    lower: b.lower,
+    upper: b.upper,
+    count: b.rows.length,
+    meanProbability: b.rows.length ? b.rows.reduce((sum, r) => sum + r.p, 0) / b.rows.length : 0,
+    observedRate: b.rows.length ? b.rows.filter((r) => r.hit).length / b.rows.length : 0,
+  }));
+  const total = samples.length;
+  const gaps = normalized.filter((b) => b.count > 0).map((b) => Math.abs(b.meanProbability - b.observedRate));
+  const ece = normalized.reduce((sum, b) => sum + (b.count / total) * Math.abs(b.meanProbability - b.observedRate), 0);
+  return { ece, mce: gaps.length ? Math.max(...gaps) : null, buckets: normalized };
 }
 
 /**
