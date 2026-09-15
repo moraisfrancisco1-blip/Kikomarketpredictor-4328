@@ -24,22 +24,30 @@ function normalize3(p: { home: number; draw: number; away: number }) { const h =
 function buildElo(matches: ProductionFootballMatch[]) { const ratings: Record<string, number> = {}; const get = (team: string) => ratings[team] ?? 1500; for (const m of [...matches].sort((a, b) => a.date.localeCompare(b.date))) { const rh = get(m.home) + 65, ra = get(m.away), expected = 1 / (1 + 10 ** ((ra - rh) / 400)), actual = m.hg > m.ag ? 1 : m.hg === m.ag ? 0.5 : 0, gd = Math.abs(m.hg - m.ag), multiplier = gd <= 1 ? 1 : gd === 2 ? 1.5 : (11 + gd) / 8, delta = 20 * multiplier * (actual - expected); ratings[m.home] = get(m.home) + delta; ratings[m.away] = get(m.away) - delta; } return ratings; }
 function teamForm(matches: ProductionFootballMatch[], team: string, n = 5): string { return [...matches].filter((m) => m.home === team || m.away === team).sort((a, b) => a.date.localeCompare(b.date)).slice(-n).map((m) => { if (m.hg === m.ag) return "D"; const teamHome = m.home === team; return teamHome ? (m.hg > m.ag ? "W" : "L") : (m.ag > m.hg ? "W" : "L"); }).join("") || "-"; }
 
-function buildValidation(samples: NonNullable<ReturnType<typeof backtestWithSamples>>, minimum = 100): ProductionFootballValidation {
+function historicalBaseRate(matches: ProductionFootballMatch[]): [number, number, number] {
+  if (!matches.length) return [1 / 3, 1 / 3, 1 / 3];
+  let home = 0, draw = 0, away = 0;
+  for (const m of matches) {
+    if (m.hg > m.ag) home++;
+    else if (m.hg === m.ag) draw++;
+    else away++;
+  }
+  return [home / matches.length, draw / matches.length, away / matches.length];
+}
+
+function buildValidation(samples: NonNullable<ReturnType<typeof backtestWithSamples>>, baselineHistory: ProductionFootballMatch[], minimum = 100): ProductionFootballValidation {
   const rows: ThreeWaySample[] = samples.map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
-  // This diagnostic baseline is deliberately marked as descriptive: the
-  // backtest sample type does not expose each prediction's pre-match history.
-  // The strict OOS evaluator provides the non-leaky expanding-history baseline.
-  const homeRate = rows.length ? rows.filter((s) => s.outcome === 0).length / rows.length : 1 / 3;
-  const drawRate = rows.length ? rows.filter((s) => s.outcome === 1).length / rows.length : 1 / 3;
-  const awayRate = rows.length ? rows.filter((s) => s.outcome === 2).length / rows.length : 1 / 3;
+  // The baseline is estimated exclusively from data before the final holdout.
+  // It therefore cannot use the outcomes being evaluated by this validation.
+  const [homeRate, drawRate, awayRate] = historicalBaseRate(baselineHistory);
   const baselineRows = rows.map((s) => ({ probHome: homeRate, probDraw: drawRate, probAway: awayRate, outcome: s.outcome }));
   const brier = multiclassBrier(rows), logLoss = multiclassLogLoss(rows), baselineBrier = multiclassBrier(baselineRows), baselineLogLoss = multiclassLogLoss(baselineRows);
   const maxWinnerProbability = rows.reduce((m, s) => Math.max(m, s.probHome, s.probDraw, s.probAway), 0);
   const warnings: string[] = [];
   if (rows.length < minimum) warnings.push("insufficient out-of-sample validation sample");
   if (maxWinnerProbability >= 0.85) warnings.push("high probability concentration");
-  if (brier != null && baselineBrier != null && brier >= baselineBrier) warnings.push("Brier does not beat descriptive holdout base-rate");
-  if (logLoss != null && baselineLogLoss != null && logLoss >= baselineLogLoss) warnings.push("log loss does not beat descriptive holdout base-rate");
+  if (brier != null && baselineBrier != null && brier >= baselineBrier) warnings.push("Brier does not beat chronological pre-holdout base-rate");
+  if (logLoss != null && baselineLogLoss != null && logLoss >= baselineLogLoss) warnings.push("log loss does not beat chronological pre-holdout base-rate");
   return { sample: rows.length, brier, logLoss, baselineBrier, baselineLogLoss, maxWinnerProbability, sufficient: rows.length >= minimum, warnings };
 }
 
@@ -92,7 +100,7 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
   const calibrated = calibrateWithHistory({ home: raw.probHome, draw: raw.probDraw, away: raw.probAway }, calibrationSamples);
 
   const holdoutSamples = getValidationSamples(asOfMatches, tuned.halfLifeDays, 0.2);
-  const validation = buildValidation(holdoutSamples);
+  const validation = buildValidation(holdoutSamples, asOfMatches.slice(0, calibrationEnd));
   const elo = buildElo(asOfMatches);
   const warnings = [...validation.warnings, ...(context.warnings ?? [])];
   const xgHome = options.xg?.get(home)?.xgFor;
