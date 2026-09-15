@@ -30,6 +30,7 @@ jobs:
       - run: bun test packages/web/src/api/lib/football-prediction-ledger.test.ts
       - run: bun test packages/web/src/api/lib/football-prediction-ledger-store.test.ts
       - run: bun test packages/web/src/api/lib/football-ledger-persistence.test.ts
+      - run: bun test packages/web/src/api/football-ledger-route.integration.test.ts
       - run: bun test packages/web/src/api/lib/football-oos-validation.test.ts
       - run: bun test packages/web/src/api/lib/probability-validation.test.ts
       - run: bun test packages/web/src/api/lib/football-probability-guard.test.ts
