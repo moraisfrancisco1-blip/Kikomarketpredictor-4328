@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { reliabilityBuckets, topProbabilityCalibration } from "./probability-validation";
+import { isFiniteThreeWaySample, reliabilityBuckets, topProbabilityCalibration } from "./probability-validation";
 
 const samples = [
   { probHome: 0.8, probDraw: 0.1, probAway: 0.1, outcome: 0 as const },
@@ -29,5 +29,21 @@ describe("probability calibration", () => {
     ]);
     expect(result.ece).toBe(0);
     expect(result.mce).toBe(0);
+  });
+
+  test("rejects non-finite and non-positive probability vectors", () => {
+    expect(isFiniteThreeWaySample({ probHome: Number.NaN, probDraw: 0.5, probAway: 0.5, outcome: 0 })).toBe(false);
+    expect(isFiniteThreeWaySample({ probHome: Number.POSITIVE_INFINITY, probDraw: 0, probAway: 1, outcome: 2 })).toBe(false);
+    expect(isFiniteThreeWaySample({ probHome: 0, probDraw: 0, probAway: 0, outcome: 1 })).toBe(false);
+    expect(isFiniteThreeWaySample({ probHome: 0.5, probDraw: 0.3, probAway: 0.2, outcome: 0 })).toBe(true);
+  });
+
+  test("ignores invalid samples instead of crashing calibration", () => {
+    const result = topProbabilityCalibration([
+      ...samples,
+      { probHome: Number.NaN, probDraw: 0.5, probAway: 0.5, outcome: 0 as const },
+    ]);
+    expect(result.buckets.reduce((n, b) => n + b.count, 0)).toBe(samples.length);
+    expect(Number.isFinite(result.ece ?? NaN)).toBe(true);
   });
 });
