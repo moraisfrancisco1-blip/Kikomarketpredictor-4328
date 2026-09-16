@@ -455,7 +455,7 @@ const FIXTURE_NAME_OVERRIDE: Record<string, string> = {
 };
 
 // Map an openfootball name to the model's team name (or null if no confident match).
-function mapToModelTeam(openName: string, modelTeams: string[]): string | null {
+export function mapToModelTeam(openName: string, modelTeams: string[]): string | null {
   const c = canon(openName);
   if (FIXTURE_NAME_OVERRIDE[c]) return FIXTURE_NAME_OVERRIDE[c];
   // canon-match against the model team list

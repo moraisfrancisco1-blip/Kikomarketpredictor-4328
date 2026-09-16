@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import legacyApp from "./index-legacy.js";
-import { FOOTBALL_LEAGUES, fetchFootball, predictFootball, listTeams, fetchFixtures, selectUpcoming, predictCrossLeagueProduction } from "./lib/sports.js";
+import { FOOTBALL_LEAGUES, fetchFootball, predictFootball, listTeams, fetchFixtures, selectUpcoming, predictCrossLeagueProduction, fetchCrossLeagueDataProduction, fetchEuroFixtures, selectUpcomingEuro, EURO_SOURCE_KEYS } from "./lib/sports.js";
 import { recordFootballPrediction, reportFootballLedger, resolveFootballPrediction } from "./lib/football-prediction-ledger.js";
 import { getFootballPrediction, listFootballPredictions, saveFootballPrediction } from "./lib/football-prediction-ledger-store.js";
 import { getFootballPredictionDb, listFootballPredictionsDb, saveFootballPredictionDb } from "./lib/football-prediction-ledger-db.js";
 import { evaluateFootballOos } from "./lib/football-oos-validation.js";
+import { fetchPrimeiraLigaFixtures, fetchChampionsLeagueFixturesFree, fetchEuropaLeagueFixturesFree } from "./lib/football-free-sources.js";
 
 const app = new Hono().basePath("api").use(cors({ origin: (origin) => origin ?? "*", credentials: true, exposeHeaders: ["set-auth-token"] }));
 const parseMultiplier = (value: string | undefined, def = 1) => { const n = parseFloat(value ?? ""); return Number.isFinite(n) ? Math.max(0.3, Math.min(1.8, n)) : def; };
@@ -103,7 +104,11 @@ app.get("/sports/football/oos", async (c) => {
 app.get("/sports/football/fixtures", async (c) => {
   const code = (c.req.query("league") ?? "E0").toUpperCase(), today = c.req.query("today") || new Date().toISOString().slice(0, 10), days = Math.min(30, Math.max(1, parseInt(c.req.query("days") ?? "7", 10) || 7));
   try {
-    const matches = await fetchFootball(code), teams = listTeams(matches), { fixtures, season } = await fetchFixtures(code, teams), { list, offseason } = selectUpcoming(fixtures, today, days), leagueName = FOOTBALL_LEAGUES[code]?.name ?? code;
+    const matches = await fetchFootball(code), teams = listTeams(matches);
+    // Primeira Liga has no football.json feed; openfootball's Football.TXT
+    // dataset for Portugal (europe/portugal) is the only free fixture source.
+    const { fixtures, season } = code === "P1" ? await fetchPrimeiraLigaFixtures(teams) : await fetchFixtures(code, teams);
+    const { list, offseason } = selectUpcoming(fixtures, today, days), leagueName = FOOTBALL_LEAGUES[code]?.name ?? code;
     const games = list.map((f) => { let prediction: any = null, error: string | null = null; if (f.home && f.away && f.home !== f.away) { try { prediction = predictFootball(leagueName, matches, f.home, f.away, { fixtureDate: f.date }); } catch (e: any) { error = e?.message ?? "no model"; } } else error = "team not mapped"; return { date: f.date, time: f.time, round: f.round, home: f.home ?? f.homeOpen, away: f.away ?? f.awayOpen, played: f.played, prediction, error }; });
     return c.json({ league: leagueName, season, offseason, count: games.length, games }, 200);
   } catch (e: any) { return c.json({ error: e?.message ?? "failed" }, 502); }
@@ -131,6 +136,32 @@ app.get("/sports/euro/predict", async (c) => {
     if (Number.isFinite(drawOdds) && drawOdds > 1) ev.draw = +(prediction.probDraw - 1 / drawOdds).toFixed(4);
     if (Number.isFinite(awayOdds) && awayOdds > 1) ev.away = +(prediction.probAway - 1 / awayOdds).toFixed(4);
     return c.json({ prediction: { ...prediction, ev, fixtureDateSource: requestedFixtureDate ? "explicit" : "today" } }, 200);
+  } catch (e: any) { return c.json({ error: e?.message ?? "failed" }, 502); }
+});
+
+app.get("/sports/euro/fixtures", async (c) => {
+  const key = c.req.query("key") ?? "wcup";
+  const today = c.req.query("today") || new Date().toISOString().slice(0, 10);
+  const days = Math.min(60, Math.max(1, parseInt(c.req.query("days") ?? "14", 10) || 14));
+  try {
+    // Champions/Europa League have a dedicated free fixture dataset
+    // (openfootball/champions-league) with team names reconciled to the
+    // Dixon-Coles model, so predict lookups succeed reliably. Fall back to
+    // the ESPN scrape when it has nothing yet (e.g. Europa League's
+    // league-phase file lags qualifiers early in the season).
+    if (key === "ucl" || key === "uel") {
+      const { teamLeague } = await fetchCrossLeagueDataProduction();
+      const modelTeams = Object.keys(teamLeague);
+      const free = key === "ucl" ? await fetchChampionsLeagueFixturesFree(modelTeams) : await fetchEuropaLeagueFixturesFree(modelTeams);
+      if (free) {
+        const { list, offseason } = selectUpcomingEuro(free, today, days);
+        return c.json({ competition: key === "ucl" ? "Champions League" : "Liga Europa", offseason, count: list.length, games: list, source: "openfootball" }, 200);
+      }
+    }
+    const fixtures = await fetchEuroFixtures(key);
+    const { list, offseason } = selectUpcomingEuro(fixtures, today, days);
+    const source = EURO_SOURCE_KEYS.find((s) => s.key === key);
+    return c.json({ competition: source?.label ?? key, offseason, count: list.length, games: list, source: "espn" }, 200);
   } catch (e: any) { return c.json({ error: e?.message ?? "failed" }, 502); }
 });
 
