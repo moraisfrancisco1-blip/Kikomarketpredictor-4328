@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
-import { requireDatabase } from "../database";
-import { footballPredictionLedger } from "../database/schema";
-import type { FootballPredictionLedgerRow } from "./football-prediction-ledger";
+import { requireDatabase } from "../database/index.js";
+import { footballPredictionLedger } from "../database/schema.js";
+import type { FootballPredictionLedgerRow } from "./football-prediction-ledger.js";
 
 const fromDb = (row: typeof footballPredictionLedger.$inferSelect): FootballPredictionLedgerRow => ({
   predictionId: row.predictionId,

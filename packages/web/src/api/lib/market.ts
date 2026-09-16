@@ -1,7 +1,7 @@
 // Market data fetching + prediction / backtest logic.
-import { detectRegime } from "./tracker";
-import { plattCalibrate, computeVolumeSignal, KNOWN_CORRELATIONS } from "./market-enrichment";
-export { fetchSentiment, fetchEarningsInfo, type SentimentResult, type EarningsInfo } from "./market-enrichment";
+import { detectRegime } from "./tracker.js";
+import { plattCalibrate, computeVolumeSignal, KNOWN_CORRELATIONS } from "./market-enrichment.js";
+export { fetchSentiment, fetchEarningsInfo, type SentimentResult, type EarningsInfo } from "./market-enrichment.js";
 
 export type Candle = {
   date: string;

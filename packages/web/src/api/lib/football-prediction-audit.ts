@@ -1,4 +1,4 @@
-import { multiclassBrier, multiclassLogLoss, type ThreeWaySample } from "./probability-validation";
+import { multiclassBrier, multiclassLogLoss, type ThreeWaySample } from "./probability-validation.js";
 
 export type FootballProbability = {
   home: number;

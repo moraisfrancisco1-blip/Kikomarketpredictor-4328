@@ -1,5 +1,5 @@
-import type { Prediction } from "./market";
-import { fetchSentiment, fetchEarningsInfo } from "./market";
+import type { Prediction } from "./market.js";
+import { fetchSentiment, fetchEarningsInfo } from "./market.js";
 
 /**
  * Context enrichment is deliberately bounded: technical signals remain the

@@ -1,4 +1,4 @@
-import type { FootballPredictionLedgerRow } from "./football-prediction-ledger";
+import type { FootballPredictionLedgerRow } from "./football-prediction-ledger.js";
 
 /**
  * Process-local bounded ledger. Persistence is deliberately isolated behind

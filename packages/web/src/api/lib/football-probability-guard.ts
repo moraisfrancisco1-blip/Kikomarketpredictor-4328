@@ -1,5 +1,5 @@
-import type { ThreeWaySample } from "./probability-validation";
-import { isFiniteThreeWaySample, multiclassBrier, multiclassLogLoss, topProbabilityCalibration } from "./probability-validation";
+import type { ThreeWaySample } from "./probability-validation.js";
+import { isFiniteThreeWaySample, multiclassBrier, multiclassLogLoss, topProbabilityCalibration } from "./probability-validation.js";
 
 export type FootballProbabilityBand = "insufficient-data" | "baseline-only" | "calibrated" | "strong-oos";
 

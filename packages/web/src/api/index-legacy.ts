@@ -8,8 +8,8 @@ import {
   getAlphaKey,
   fetchSentiment,
   fetchEarningsInfo,
-} from "./lib/market";
-import { fetchLeagueXG } from "./lib/sports";
+} from "./lib/market.js";
+import { fetchLeagueXG } from "./lib/sports.js";
 import {
   generateTickets,
   generateTicket,
@@ -18,7 +18,7 @@ import {
   frequencyAnalysis,
   lifetimeSimulator,
   analyzeTicket,
-} from "./lib/lottery";
+} from "./lib/lottery.js";
 import {
   FOOTBALL_LEAGUES,
   fetchFootball,
@@ -40,7 +40,7 @@ import {
   predictCrossLeague,
   listCrossLeagueTeams,
   backtestCrossLeague,
-} from "./lib/sports";
+} from "./lib/sports.js";
 
 const app = new Hono()
   .basePath('api')

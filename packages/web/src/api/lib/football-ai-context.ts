@@ -1,4 +1,4 @@
-import { clampFootballContextAdjustment, type FootballContextAdjustment } from "./football-model-contract";
+import { clampFootballContextAdjustment, type FootballContextAdjustment } from "./football-model-contract.js";
 
 export type FootballEvidence = {
   type: "injury" | "suspension" | "lineup" | "news" | "rest" | "motivation";
