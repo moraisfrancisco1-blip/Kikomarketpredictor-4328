@@ -10,6 +10,19 @@ import { evaluateFootballOos } from "./lib/football-oos-validation";
 const app = new Hono().basePath("api").use(cors({ origin: (origin) => origin ?? "*", credentials: true, exposeHeaders: ["set-auth-token"] }));
 const parseMultiplier = (value: string | undefined, def = 1) => { const n = parseFloat(value ?? ""); return Number.isFinite(n) ? Math.max(0.3, Math.min(1.8, n)) : def; };
 
+app.post("/auth/login", async (c) => {
+  try {
+    const body = await c.req.json<{ password?: unknown }>();
+    const supplied = typeof body.password === "string" ? body.password : "";
+    const configured = process.env.APP_PASSWORD?.trim() || process.env.VITE_APP_PASSWORD?.trim();
+    if (!configured) return c.json({ ok: false, error: "authentication is not configured" }, 503);
+    if (!supplied || supplied !== configured) return c.json({ ok: false, error: "invalid password" }, 401);
+    return c.json({ ok: true }, 200);
+  } catch {
+    return c.json({ ok: false, error: "invalid request" }, 400);
+  }
+});
+
 async function saveLedgerRow(row: Awaited<ReturnType<typeof recordFootballPrediction>>) {
   try {
     return await saveFootballPredictionDb(row);
