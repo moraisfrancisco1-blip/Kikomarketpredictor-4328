@@ -109,6 +109,14 @@ app.get("/sports/football/fixtures", async (c) => {
   } catch (e: any) { return c.json({ error: e?.message ?? "failed" }, 502); }
 });
 
-app.all("*", (c) => legacyApp.fetch(c.req.raw, c.env, c.executionCtx));
+app.all("*", (c) => {
+  let executionCtx: typeof c.executionCtx | undefined;
+  try {
+    executionCtx = c.executionCtx;
+  } catch {
+    executionCtx = undefined;
+  }
+  return legacyApp.fetch(c.req.raw, c.env, executionCtx);
+});
 export type AppType = typeof app;
 export default app;
