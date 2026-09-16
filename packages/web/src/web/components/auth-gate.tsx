@@ -2,9 +2,6 @@ import { useState, useEffect } from "react";
 import { Lock, Eye, EyeOff, Activity } from "lucide-react";
 
 const SESSION_KEY = "mp_auth";
-// Vercel: configure VITE_APP_PASSWORD for the production password.
-// The fallback exists only so a deployment without the variable remains usable.
-const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD ?? "predictor2025";
 
 function check(): boolean {
   try {
@@ -24,8 +21,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [authed, setAuthed] = useState(check);
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("Senha incorreta. Tente novamente.");
   const [show, setShow] = useState(false);
   const [shake, setShake] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const handler = () => setAuthed(check());
@@ -35,17 +34,36 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (authed) return <>{children}</>;
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (password === APP_PASSWORD) {
-      save();
-      setAuthed(true);
-    } else {
-      setError(true);
-      setShake(true);
-      setTimeout(() => setShake(false), 600);
-      setPassword("");
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (res.ok && data.ok) {
+        save();
+        setAuthed(true);
+        return;
+      }
+      setErrorMessage(
+        res.status === 503
+          ? "Autenticação não configurada no servidor."
+          : "Senha incorreta. Tente novamente."
+      );
+    } catch {
+      setErrorMessage("Falha de ligação. Tente novamente.");
+    } finally {
+      setSubmitting(false);
     }
+    setError(true);
+    setShake(true);
+    setTimeout(() => setShake(false), 600);
+    setPassword("");
   }
 
   return (
@@ -91,13 +109,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </div>
 
           {error && (
-            <p className="text-xs -mt-1" style={{ color: "#ef4444" }}>Senha incorreta. Tente novamente.</p>
+            <p className="text-xs -mt-1" style={{ color: "#ef4444" }}>{errorMessage}</p>
           )}
 
-          <button type="submit"
-            className="w-full rounded-xl py-3 text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95"
+          <button type="submit" disabled={submitting}
+            className="w-full rounded-xl py-3 text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-60"
             style={{ background: "#0284c7" }}>
-            Entrar
+            {submitting ? "A verificar..." : "Entrar"}
           </button>
         </form>
 
