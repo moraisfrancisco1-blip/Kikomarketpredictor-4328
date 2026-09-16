@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import legacyApp from "./index-legacy.js";
-import { FOOTBALL_LEAGUES, fetchFootball, predictFootball, listTeams, fetchFixtures, selectUpcoming } from "./lib/sports.js";
+import { FOOTBALL_LEAGUES, fetchFootball, predictFootball, listTeams, fetchFixtures, selectUpcoming, predictCrossLeagueProduction } from "./lib/sports.js";
 import { recordFootballPrediction, reportFootballLedger, resolveFootballPrediction } from "./lib/football-prediction-ledger.js";
 import { getFootballPrediction, listFootballPredictions, saveFootballPrediction } from "./lib/football-prediction-ledger-store.js";
 import { getFootballPredictionDb, listFootballPredictionsDb, saveFootballPredictionDb } from "./lib/football-prediction-ledger-db.js";
@@ -106,6 +106,31 @@ app.get("/sports/football/fixtures", async (c) => {
     const matches = await fetchFootball(code), teams = listTeams(matches), { fixtures, season } = await fetchFixtures(code, teams), { list, offseason } = selectUpcoming(fixtures, today, days), leagueName = FOOTBALL_LEAGUES[code]?.name ?? code;
     const games = list.map((f) => { let prediction: any = null, error: string | null = null; if (f.home && f.away && f.home !== f.away) { try { prediction = predictFootball(leagueName, matches, f.home, f.away, { fixtureDate: f.date }); } catch (e: any) { error = e?.message ?? "no model"; } } else error = "team not mapped"; return { date: f.date, time: f.time, round: f.round, home: f.home ?? f.homeOpen, away: f.away ?? f.awayOpen, played: f.played, prediction, error }; });
     return c.json({ league: leagueName, season, offseason, count: games.length, games }, 200);
+  } catch (e: any) { return c.json({ error: e?.message ?? "failed" }, 502); }
+});
+
+app.get("/sports/euro/predict", async (c) => {
+  const home = c.req.query("home") ?? "", away = c.req.query("away") ?? "";
+  if (!home || !away) return c.json({ error: "home e away são obrigatórios" }, 400);
+  const requestedFixtureDate = c.req.query("fixtureDate")?.trim() ?? "";
+  // Same as the domestic route: default to today when the caller (e.g. the
+  // manual matchup simulator) doesn't send a date — never leaks future results.
+  const fixtureDate = requestedFixtureDate || new Date().toISOString().slice(0, 10);
+  try {
+    const prediction = await predictCrossLeagueProduction(home, away, {
+      fixtureDate,
+      homeAttackMult: parseMultiplier(c.req.query("homeAttackMult")),
+      homeDefMult: parseMultiplier(c.req.query("homeDefMult")),
+      awayAttackMult: parseMultiplier(c.req.query("awayAttackMult")),
+      awayDefMult: parseMultiplier(c.req.query("awayDefMult")),
+      motivationFactor: parseMultiplier(c.req.query("motivationFactor")),
+    });
+    const ev: Record<string, number | null> = { home: null, draw: null, away: null };
+    const homeOdds = parseFloat(c.req.query("homeOdds") ?? ""), drawOdds = parseFloat(c.req.query("drawOdds") ?? ""), awayOdds = parseFloat(c.req.query("awayOdds") ?? "");
+    if (Number.isFinite(homeOdds) && homeOdds > 1) ev.home = +(prediction.probHome - 1 / homeOdds).toFixed(4);
+    if (Number.isFinite(drawOdds) && drawOdds > 1) ev.draw = +(prediction.probDraw - 1 / drawOdds).toFixed(4);
+    if (Number.isFinite(awayOdds) && awayOdds > 1) ev.away = +(prediction.probAway - 1 / awayOdds).toFixed(4);
+    return c.json({ prediction: { ...prediction, ev, fixtureDateSource: requestedFixtureDate ? "explicit" : "today" } }, 200);
   } catch (e: any) { return c.json({ error: e?.message ?? "failed" }, 502); }
 });
 
