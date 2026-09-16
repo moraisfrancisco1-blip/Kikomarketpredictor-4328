@@ -1764,12 +1764,13 @@ function EuroFixtureCard({ g, competitionName, isNational = false }: { g: any; c
   const [showPred, setShowPred] = useState(false);
 
   // National teams → international model; clubs → cross-league model
+  const fixtureDateParam = g.date ? `&fixtureDate=${encodeURIComponent(g.date)}` : "";
   const predEndpoint = isNational
-    ? `/api/sports/international/predict?home=${encodeURIComponent(g.home)}&away=${encodeURIComponent(g.away)}&neutral=false`
-    : `/api/sports/euro/predict?home=${encodeURIComponent(g.home)}&away=${encodeURIComponent(g.away)}`;
+    ? `/api/sports/international/predict?home=${encodeURIComponent(g.home)}&away=${encodeURIComponent(g.away)}&neutral=false${fixtureDateParam}`
+    : `/api/sports/euro/predict?home=${encodeURIComponent(g.home)}&away=${encodeURIComponent(g.away)}${fixtureDateParam}`;
 
   const pred = useQuery({
-    queryKey: [isNational ? "intl-predict" : "euro-predict", g.home, g.away],
+    queryKey: [isNational ? "intl-predict" : "euro-predict", g.home, g.away, g.date],
     queryFn: async () => {
       const res = await fetch(predEndpoint);
       return res.json();

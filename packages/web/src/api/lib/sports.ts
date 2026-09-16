@@ -1,6 +1,6 @@
 export * from "./sports-legacy.js";
 
-import { fetchFootball as fetchHistoricalFootball } from "./sports-legacy.js";
+import { fetchFootball as fetchHistoricalFootball, FOOTBALL_LEAGUES } from "./sports-legacy.js";
 import { predictFootballProduction } from "./football-production-engine.js";
 import type { PredictExtOpts as LegacyPredictExtOpts } from "./sports-legacy.js";
 import type { Match } from "./sports-legacy.js";
@@ -145,5 +145,61 @@ export function predictFootball(
     xgUsed: prediction.xgUsed,
     contextSourceCount: prediction.contextSourceCount,
     warnings: prediction.warnings,
+  };
+}
+
+// ---- Cross-league (Champions League / Europa League / continental club
+// competitions) production pool. Same current-season-merged, leakage-safe
+// engine as domestic predictFootball — pooling all domestic leagues gives the
+// Dixon-Coles fit enough matches per club to predict continental fixtures,
+// since UEFA competitions have no standalone results feed of their own.
+const CROSS_LEAGUE_TTL = 15 * 60 * 1000;
+let _crossLeagueProduction: { ts: number; data: { matches: Match[]; teamLeague: Record<string, string> } } | null = null;
+
+export async function fetchCrossLeagueDataProduction(): Promise<{ matches: Match[]; teamLeague: Record<string, string> }> {
+  if (_crossLeagueProduction && Date.now() - _crossLeagueProduction.ts < CROSS_LEAGUE_TTL) return _crossLeagueProduction.data;
+
+  const codes = Object.keys(FOOTBALL_LEAGUES);
+  const results = await Promise.allSettled(codes.map((code) => fetchFootball(code)));
+
+  const merged = new Map<string, Match>();
+  const teamLeague: Record<string, string> = {};
+  results.forEach((r, i) => {
+    if (r.status !== "fulfilled") return;
+    const leagueName = FOOTBALL_LEAGUES[codes[i]]!.name;
+    for (const m of r.value) {
+      merged.set(`${m.date}|${m.home}|${m.away}`, m);
+      teamLeague[m.home] = leagueName;
+      teamLeague[m.away] = leagueName;
+    }
+  });
+
+  const data = { matches: [...merged.values()].sort((a, b) => a.date.localeCompare(b.date)), teamLeague };
+  _crossLeagueProduction = { ts: Date.now(), data };
+  return data;
+}
+
+/**
+ * Leakage-safe replacement for the legacy predictCrossLeague: goes through
+ * predictFootballProduction (chronological holdout validation + empirical
+ * calibration shrinkage) instead of a bare Dixon-Coles fit, and pools the
+ * current-season-merged match data so newly promoted/transferred teams and
+ * this season's form are included.
+ */
+export async function predictCrossLeagueProduction(home: string, away: string, extOpts: PredictExtOpts = {}) {
+  const fixtureDate = extOpts.fixtureDate ?? new Date().toISOString().slice(0, 10);
+  const { matches, teamLeague } = await fetchCrossLeagueDataProduction();
+
+  const prediction = predictFootballProduction(matches, home, away, {
+    fixtureDate,
+    neutral: extOpts.neutral,
+    context: extOpts.context,
+    xg: extOpts.xg,
+  });
+
+  return {
+    ...prediction,
+    leagueHome: teamLeague[home] ?? null,
+    leagueAway: teamLeague[away] ?? null,
   };
 }
