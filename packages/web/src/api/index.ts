@@ -51,10 +51,15 @@ async function listLedgerRows() {
 }
 
 app.get("/sports/football/predict", async (c) => {
-  const code = (c.req.query("league") ?? "E0").toUpperCase(), home = c.req.query("home") ?? "", away = c.req.query("away") ?? "", fixtureDate = c.req.query("fixtureDate") ?? "";
+  const code = (c.req.query("league") ?? "E0").toUpperCase(), home = c.req.query("home") ?? "", away = c.req.query("away") ?? "";
+  const requestedFixtureDate = c.req.query("fixtureDate")?.trim() ?? "";
+  // The manual predictor UI historically did not send a date. Using today's
+  // date is a safe as-of boundary: it never falls back to the latest match
+  // and therefore cannot introduce future-result leakage. Future fixtures
+  // should send their explicit fixtureDate.
+  const fixtureDate = requestedFixtureDate || new Date().toISOString().slice(0, 10);
   if (!home || !away) return c.json({ error: "home and away required" }, 400);
   if (home === away) return c.json({ error: "pick two different teams" }, 400);
-  if (!fixtureDate) return c.json({ error: "fixtureDate is required for a leakage-safe prediction" }, 400);
   try {
     const matches = await fetchFootball(code), leagueName = FOOTBALL_LEAGUES[code]?.name ?? code;
     const prediction = predictFootball(leagueName, matches, home, away, { fixtureDate, homeAttackMult: parseMultiplier(c.req.query("homeAttackMult")), homeDefMult: parseMultiplier(c.req.query("homeDefMult")), awayAttackMult: parseMultiplier(c.req.query("awayAttackMult")), awayDefMult: parseMultiplier(c.req.query("awayDefMult")), motivationFactor: parseMultiplier(c.req.query("motivationFactor")) });
@@ -63,7 +68,7 @@ app.get("/sports/football/predict", async (c) => {
     if (Number.isFinite(homeOdds) && homeOdds > 1) ev.home = +(prediction.probHome - 1 / homeOdds).toFixed(4);
     if (Number.isFinite(drawOdds) && drawOdds > 1) ev.draw = +(prediction.probDraw - 1 / drawOdds).toFixed(4);
     if (Number.isFinite(awayOdds) && awayOdds > 1) ev.away = +(prediction.probAway - 1 / awayOdds).toFixed(4);
-    return c.json({ prediction: { ...prediction, ev } }, 200);
+    return c.json({ prediction: { ...prediction, ev, fixtureDateSource: requestedFixtureDate ? "explicit" : "today" } }, 200);
   } catch (e: any) { return c.json({ error: e?.message ?? "failed" }, 502); }
 });
 
