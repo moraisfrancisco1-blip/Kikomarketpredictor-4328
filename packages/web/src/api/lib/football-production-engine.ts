@@ -104,7 +104,20 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
   if (matches.length < 120) throw new Error("not enough historical matches for production prediction");
   const fixtureDate = normalizeFixtureDate(options.fixtureDate);
   const fixtureTs = new Date(fixtureDate).getTime();
-  const asOfMatches = matches.filter((m) => { const matchTs = new Date(m.date).getTime(); return Number.isFinite(matchTs) && matchTs < fixtureTs; });
+  // Every match in `matches` is, by construction at every call site, an
+  // already-played result (future/unplayed rows are filtered out before
+  // this is called) — there is no possible match dated between "now" and
+  // any future fixtureDate. So for a future fixture, capping the as-of
+  // cutoff at "now" instead of the fixture's own (later) date produces the
+  // *identical* asOfMatches set — same fit, same prediction, proven, not
+  // approximated. What it buys: every future fixture on a page (which is
+  // nearly all of them — Champions/Europa League fixtures span weeks) now
+  // shares one fit-cache entry instead of one each. Confirmed live: without
+  // this, an otherwise-identical fixture one month out cost ~56s in
+  // production (full model refit against the ~500-team cross-league pool)
+  // instead of the <1s a same-day fixture got from the warm cache.
+  const asOfTs = Math.min(fixtureTs, Date.now());
+  const asOfMatches = matches.filter((m) => { const matchTs = new Date(m.date).getTime(); return Number.isFinite(matchTs) && matchTs < asOfTs; });
   if (asOfMatches.length < 120) throw new Error("not enough historical matches available before fixture date");
 
   const dc = asDC(asOfMatches);
