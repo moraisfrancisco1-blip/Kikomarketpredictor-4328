@@ -1897,6 +1897,25 @@ function EuroFixtureCard({ g, competitionName, isNational = false }: { g: any; c
                   <Stat label="xG total" value={(p.expHomeGoals + p.expAwayGoals).toFixed(1)} />
                 </div>
 
+                {/* Model's own reliability signal — same badge the domestic
+                    fixture cards use, factoring sample size and per-team
+                    history, not just headline probability. */}
+                {p.confidence != null && (
+                  <div className="flex items-center justify-between gap-2">
+                    <ConfidenceBadge conf={p.confidence} />
+                    {p.validation && !p.validation.sufficient && (
+                      <span className="text-[9px] text-amber-500 font-medium">
+                        amostra de validação insuficiente ({p.validation.sample})
+                      </span>
+                    )}
+                  </div>
+                )}
+                {p.validation?.sufficient && p.validation.warnings?.some((w: string) => w.includes("does not beat")) && (
+                  <div className="text-[10px] text-amber-600 bg-amber-50 rounded-lg px-2 py-1 border border-amber-200">
+                    ⚠ modelo não supera a base histórica nesta amostra — tratar com cautela extra
+                  </div>
+                )}
+
                 {/* Toggle more details */}
                 <button
                   onClick={() => setShowPred((v) => !v)}
