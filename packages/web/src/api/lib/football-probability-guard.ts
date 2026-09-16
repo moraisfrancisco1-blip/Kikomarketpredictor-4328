@@ -75,8 +75,8 @@ export function assessFootballProbabilities(
   baselineSamples: ThreeWaySample[],
   minimumSamples = 100,
 ): FootballProbabilityGuard {
-  // All diagnostics and thresholds operate on the same finite OOS population.
-  // Invalid rows must not count toward the minimum sample requirement or distort calibration.
+  // Metrics use only finite rows, while paired bootstrap keeps original row alignment so
+  // an invalid row in one series cannot shift the corresponding fixture in the other series.
   const validSamples = samples.filter(isFiniteThreeWaySample);
   const validBaselineSamples = baselineSamples.filter(isFiniteThreeWaySample);
   const maxProbability = validSamples.reduce((m, s) => Math.max(m, s.probHome, s.probDraw, s.probAway), 0);
@@ -87,11 +87,11 @@ export function assessFootballProbabilities(
   const ece = topProbabilityCalibration(validSamples).ece;
   const brierDelta = brier != null && baselineBrier != null ? brier - baselineBrier : null;
   const logLossDelta = logLoss != null && baselineLogLoss != null ? logLoss - baselineLogLoss : null;
-  const brierDeltaUpper95 = bootstrapUpper95(pairedDifferences(validSamples, validBaselineSamples, "brier"));
-  const logLossDeltaUpper95 = bootstrapUpper95(pairedDifferences(validSamples, validBaselineSamples, "logLoss"));
+  const brierDeltaUpper95 = bootstrapUpper95(pairedDifferences(samples, baselineSamples, "brier"));
+  const logLossDeltaUpper95 = bootstrapUpper95(pairedDifferences(samples, baselineSamples, "logLoss"));
   const diagnostics = { maxProbability, brier, logLoss, baselineBrier, baselineLogLoss, ece, brierDelta, logLossDelta, brierDeltaUpper95, logLossDeltaUpper95 };
 
-  if (validSamples.length < minimumSamples) {
+  if (Math.min(validSamples.length, validBaselineSamples.length) < minimumSamples) {
     return { band: "insufficient-data", publishable: false, reason: "fewer than the minimum finite OOS sample", ...diagnostics };
   }
   const beatsBrier = brierDelta != null && brierDelta < 0;
