@@ -34,6 +34,14 @@ export type Match = {
 
 const matchCache = new Map<string, { ts: number; matches: Match[] }>();
 const TTL = 30 * 60 * 1000;
+// A page with many fixture cards fires many concurrent predict() calls, each
+// eventually reaching this same per-league fetch. Without coalescing,
+// concurrent callers that arrive before the first one finishes each kick off
+// their own duplicate round of network requests instead of sharing it —
+// confirmed live as the actual cause of a fixtures page generating hundreds
+// of simultaneous outbound requests and never finishing. See the identical
+// fix (and full explanation) in football-free-sources.ts's singleflight().
+const matchInFlight = new Map<string, Promise<Match[]>>();
 
 // football-data.co.uk uses dd/mm/yy or dd/mm/yyyy. Normalize to ISO yyyy-mm-dd.
 function toIso(d: string): string {
@@ -49,6 +57,15 @@ export async function fetchFootball(leagueCode: string): Promise<Match[]> {
   const cached = matchCache.get(leagueCode);
   if (cached && Date.now() - cached.ts < TTL) return cached.matches;
 
+  const existing = matchInFlight.get(leagueCode);
+  if (existing) return existing;
+  const p = fetchFootballUncached(leagueCode);
+  matchInFlight.set(leagueCode, p);
+  p.finally(() => matchInFlight.delete(leagueCode));
+  return p;
+}
+
+async function fetchFootballUncached(leagueCode: string): Promise<Match[]> {
   const all: Match[] = [];
   for (const season of SEASONS) {
     const url = `https://www.football-data.co.uk/mmz4281/${season}/${leagueCode}.csv`;

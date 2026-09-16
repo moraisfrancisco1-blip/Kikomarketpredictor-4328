@@ -66,17 +66,53 @@ function calibrateWithHistory(p: { home: number; draw: number; away: number }, s
 // The cross-league pool (Champions/Europa League predictions) made this
 // concrete: fitting against it went from ~150 to ~500 teams, and a page of
 // several fixtures was fitting that model over and over.
+function windowKey(dc: DCMatch[]): string { return `${dc.length}:${dc[0]?.date}:${dc.at(-1)?.date}`; }
+
 const fitCache = new Map<string, { ts: number; tuned: ReturnType<typeof tuneHalfLife>; model: ReturnType<typeof fitDixonColes> }>();
 const FIT_CACHE_TTL = 30 * 60 * 1000;
-function fitCached(dc: DCMatch[]) {
-  const key = `${dc.length}:${dc[0]?.date}:${dc.at(-1)?.date}`;
+function fitCached(dc: DCMatch[], key: string) {
   const cached = fitCache.get(key);
   if (cached && Date.now() - cached.ts < FIT_CACHE_TTL) return cached;
-  const tuned = tuneHalfLife(dc, undefined, { tuningFraction: 0.6, refitEvery: 25 });
+  const tuned = tuneHalfLife(dc, undefined, { tuningFraction: 0.6, refitEvery: adaptiveRefitEvery(dc.length) });
   const model = fitDixonColes(dc, { halfLifeDays: tuned.halfLifeDays });
   const entry = { ts: Date.now(), tuned, model };
   fitCache.set(key, entry);
   return entry;
+}
+
+// Elo is a global rating pass over the whole as-of match window (sort +
+// iterate every match, for every team) — like the Dixon-Coles fit, it
+// depends only on that window, not on which pair is being predicted, but
+// unlike the fit it was never cached. At the cross-league pool's scale
+// (~500 teams, ~22k matches) this was expensive enough on its own that,
+// with the fit itself now shared, it became the dominant remaining cost for
+// every fixture after the first on a page: confirmed live via a 33-request
+// concurrency test that took 159s even with the fit shared, most of it
+// spent recomputing this same Elo pass 33 times.
+const eloCache = new Map<string, { ts: number; elo: ReturnType<typeof buildElo> }>();
+function eloCached(matches: ProductionFootballMatch[], key: string) {
+  const cached = eloCache.get(key);
+  if (cached && Date.now() - cached.ts < FIT_CACHE_TTL) return cached.elo;
+  const elo = buildElo(matches);
+  eloCache.set(key, { ts: Date.now(), elo });
+  return elo;
+}
+
+// Walk-forward validation refits the whole model every `refitEvery` matches
+// across the holdout slice — cost is roughly (holdout size / refitEvery)
+// refits, each against a training set that keeps growing. A fixed
+// refitEvery=25 is fine at domestic-league scale (~1-2k matches, a few dozen
+// refits) but at the cross-league pool's scale (~22k matches, ~560 teams)
+// it meant hundreds of refits of an increasingly large multi-hundred-team
+// model — confirmed live as the actual dominant cost (a single cold
+// cross-league prediction took 150-160s even with data-fetching and the
+// final fit itself already shared/cached). Scaling refitEvery with pool
+// size keeps the refit COUNT roughly constant instead of growing with the
+// pool, preserving the walk-forward validation's intent at any scale
+// without leaving domestic predictions (well under this threshold) any
+// different from before.
+function adaptiveRefitEvery(poolSize: number, targetRefits = 60): number {
+  return Math.max(25, Math.ceil(poolSize / targetRefits));
 }
 
 const validationCache = new Map<string, { ts: number; samples: NonNullable<ReturnType<typeof backtestWithSamples>> }>();
@@ -86,7 +122,7 @@ function getValidationSamples(matches: ProductionFootballMatch[], halfLife: numb
   const key = `${dc.length}:${dc[0]?.date}:${dc.at(-1)?.date}:${halfLife}:${testFraction}`;
   const cached = validationCache.get(key);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.samples;
-  const samples = backtestWithSamples(dc, { halfLifeDays: halfLife, testFraction, refitEvery: 25 });
+  const samples = backtestWithSamples(dc, { halfLifeDays: halfLife, testFraction, refitEvery: adaptiveRefitEvery(dc.length) });
   validationCache.set(key, { ts: Date.now(), samples });
   return samples;
 }
@@ -121,7 +157,8 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
   if (asOfMatches.length < 120) throw new Error("not enough historical matches available before fixture date");
 
   const dc = asDC(asOfMatches);
-  const { tuned, model } = fitCached(dc);
+  const key = windowKey(dc);
+  const { tuned, model } = fitCached(dc, key);
   if (model.att[home] == null || model.att[away] == null) throw new Error("team not found in historical sample");
 
   const context = clampFootballContextAdjustment(options.context ?? {});
@@ -135,7 +172,7 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
 
   const holdoutSamples = getValidationSamples(asOfMatches, tuned.halfLifeDays, 0.2);
   const validation = buildValidation(holdoutSamples, asOfMatches.slice(0, calibrationEnd));
-  const elo = buildElo(asOfMatches);
+  const elo = eloCached(asOfMatches, key);
   const warnings = [...validation.warnings, ...(context.warnings ?? [])];
   const xgHome = options.xg?.get(home)?.xgFor;
   const xgAway = options.xg?.get(away)?.xgFor;
