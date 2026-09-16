@@ -251,14 +251,27 @@ const EXTRA_LEAGUES: ExtraLeague[] = [
   { label: "Georgia", urlFor: europeCountry("georgia", "ge1"), seasons: yearCandidates },
 ];
 
+// Pool EVERY available season candidate, not just the newest that resolves —
+// a single in-progress season is 10-20 matches per team, nowhere near enough
+// for a stable Dixon-Coles fit (confirmed live: Galatasaray's defense rating
+// came out absurdly strong off an 11-match sample, enough to make it favorite
+// over Barcelona). The domestic "big 6" already pool 4 seasons for exactly
+// this reason; extra leagues need the same depth, not just a fresher single
+// season.
 async function fetchExtraLeagueMatches(league: ExtraLeague): Promise<{ label: string; matches: FootballTxtMatch[] } | null> {
-  for (const season of league.seasons()) {
-    const text = await fetchText(league.urlFor(season));
+  const seasonResults = await Promise.all(league.seasons().map((season) => fetchText(league.urlFor(season))));
+  const seen = new Set<string>();
+  const matches: FootballTxtMatch[] = [];
+  for (const text of seasonResults) {
     if (!text) continue;
-    const matches = parseFootballTxt(text);
-    if (matches.length) return { label: league.label, matches };
+    for (const m of parseFootballTxt(text)) {
+      const key = `${m.date}|${m.team1}|${m.team2}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      matches.push(m);
+    }
   }
-  return null;
+  return matches.length ? { label: league.label, matches } : null;
 }
 
 const EXTRA_TTL = 60 * 60 * 1000; // these change far less often than fixtures; cache longer
@@ -284,4 +297,69 @@ export async function fetchExtraLeaguesPool(): Promise<{ matches: Match[]; teamL
   const data = { matches, teamLeague };
   extraLeaguesCache = { ts: Date.now(), data };
   return data;
+}
+
+// ---- Historical Champions/Europa League results as inter-league bridging data ----
+// Pooling domestic leagues side by side has no data point that ever compares
+// a Turkish club to a Spanish one directly — Dixon-Coles only sees each
+// team's own domestic opponents, so a club that's dominant against weak
+// domestic competition (few matches, weak opponents) can come out looking
+// artificially strong purely from sample noise and league-quality bias.
+// Confirmed live: Galatasaray's defense rating (11 domestic matches) made it
+// a 57% favorite over Barcelona (157 matches). Real historical continental
+// fixtures are the one source of genuine inter-league evidence — actual
+// results between clubs from different domestic leagues — so pooling several
+// past seasons of them calibrates the leagues against each other instead of
+// leaving Dixon-Coles to guess.
+const CONTINENTAL_HISTORY_SEASONS = ["2025-26", "2024-25", "2023-24", "2022-23", "2021-22"];
+
+async function fetchContinentalHistoryFile(competitionFile: "cl" | "el", season: string): Promise<FootballTxtMatch[]> {
+  const text = await fetchText(`https://raw.githubusercontent.com/openfootball/champions-league/master/${season}/${competitionFile}.txt`);
+  if (!text) return [];
+  return parseFootballTxt(text);
+}
+
+let continentalHistoryCache: { ts: number; matches: FootballTxtMatch[] } | null = null;
+
+async function fetchContinentalHistoryRaw(): Promise<FootballTxtMatch[]> {
+  if (continentalHistoryCache && Date.now() - continentalHistoryCache.ts < EXTRA_TTL) return continentalHistoryCache.matches;
+
+  const requests = CONTINENTAL_HISTORY_SEASONS.flatMap((season) => [
+    fetchContinentalHistoryFile("cl", season),
+    fetchContinentalHistoryFile("el", season),
+  ]);
+  const results = await Promise.all(requests);
+
+  const seen = new Set<string>();
+  const matches: FootballTxtMatch[] = [];
+  for (const list of results) {
+    for (const m of list) {
+      if (!m.score) continue;
+      const key = `${m.date}|${m.team1}|${m.team2}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      matches.push(m);
+    }
+  }
+  continentalHistoryCache = { ts: Date.now(), matches };
+  return matches;
+}
+
+/**
+ * Historical Champions/Europa League results, reconciled to whatever team
+ * identity (domestic-pool or extra-league name) each side already uses
+ * elsewhere in the cross-league pool, so these matches connect to — rather
+ * than duplicate — the nodes the rest of the pool already has. A club from a
+ * domestic league that isn't tracked at all still enters under its raw
+ * openfootball name; it just doesn't bridge anything on its own.
+ */
+export async function fetchContinentalHistoryMatches(knownTeams: string[]): Promise<Match[]> {
+  const raw = await fetchContinentalHistoryRaw();
+  return raw.map((m) => ({
+    date: m.date,
+    home: mapToModelTeam(m.team1, knownTeams) ?? m.team1,
+    away: mapToModelTeam(m.team2, knownTeams) ?? m.team2,
+    hg: m.score!.ft[0],
+    ag: m.score!.ft[1],
+  }));
 }
