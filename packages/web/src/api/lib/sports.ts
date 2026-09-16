@@ -6,7 +6,7 @@ import type { PredictExtOpts as LegacyPredictExtOpts } from "./sports-legacy.js"
 import type { Match } from "./sports-legacy.js";
 import type { FootballContextAdjustment } from "./football-model-contract.js";
 import type { XGTeamStats } from "./sports-enrichment.js";
-import { fetchExtraLeaguesPool } from "./football-free-sources.js";
+import { fetchExtraLeaguesPool, fetchContinentalHistoryMatches } from "./football-free-sources.js";
 
 export type PredictExtOpts = LegacyPredictExtOpts & {
   fixtureDate?: string | Date;
@@ -184,6 +184,14 @@ export async function fetchCrossLeagueDataProduction(): Promise<{ matches: Match
   for (const [team, league] of Object.entries(extra.teamLeague)) {
     if (!teamLeague[team]) teamLeague[team] = league;
   }
+
+  // Historical Champions/Europa League results bridge the leagues against
+  // each other with real evidence (see fetchContinentalHistoryMatches) —
+  // reconciled against every team name already known from the domestic +
+  // extra-league pools built above, so a historical fixture connects to the
+  // same node rather than creating a duplicate untethered one.
+  const continental = await fetchContinentalHistoryMatches(Object.keys(teamLeague));
+  for (const m of continental) merged.set(`${m.date}|${m.home}|${m.away}`, m);
 
   const data = { matches: [...merged.values()].sort((a, b) => a.date.localeCompare(b.date)), teamLeague };
   _crossLeagueProduction = { ts: Date.now(), data };
