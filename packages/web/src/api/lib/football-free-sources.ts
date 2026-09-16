@@ -16,6 +16,25 @@ import { mapToModelTeam, type Fixture, type EuroFixture, type Match } from "./sp
 
 const TTL = 15 * 60 * 1000;
 
+// A fixtures page renders many cards at once, each independently requesting
+// a prediction; every one of those calls reaches down into these same fetch
+// functions. Without this, N concurrent callers arriving before the first
+// has finished each kick off their own full round of network requests
+// (confirmed live: a Liga Europa page in flight generated 700+ concurrent
+// /api/sports/euro/predict requests) — real duplicate I/O, and under load
+// enough to make every one of them slow or make external hosts rate-limit.
+// This coalesces concurrent callers onto the single in-flight promise
+// instead of the value-only cache below it, which only helps once a result
+// already exists.
+function singleflight<T>(getSlot: () => Promise<T> | null, setSlot: (p: Promise<T> | null) => void, fn: () => Promise<T>): Promise<T> {
+  const existing = getSlot();
+  if (existing) return existing;
+  const p = fn();
+  setSlot(p);
+  p.finally(() => setSlot(null));
+  return p;
+}
+
 // European club seasons run roughly Aug -> May. "2025-26" style naming.
 function currentSeasonStart(): number {
   const now = new Date();
@@ -89,13 +108,21 @@ async function fetchSeasonTxt(urlFor: (season: string) => string, opts: { allowS
   return allowStaleFallback ? staleFallback : null;
 }
 
-const rawCache = new Map<string, { ts: number; data: { matches: FootballTxtMatch[]; season: string } | null }>();
+type SeasonTxtResult = { matches: FootballTxtMatch[]; season: string } | null;
+const rawCache = new Map<string, { ts: number; data: SeasonTxtResult }>();
+const rawInFlight = new Map<string, Promise<SeasonTxtResult>>();
 async function cachedSeasonTxt(cacheKey: string, urlFor: (season: string) => string, opts: { allowStaleFallback?: boolean } = {}) {
   const cached = rawCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < TTL) return cached.data;
-  const data = await fetchSeasonTxt(urlFor, opts);
-  rawCache.set(cacheKey, { ts: Date.now(), data });
-  return data;
+  return singleflight(
+    () => rawInFlight.get(cacheKey) ?? null,
+    (p) => { if (p) rawInFlight.set(cacheKey, p); else rawInFlight.delete(cacheKey); },
+    async () => {
+      const data = await fetchSeasonTxt(urlFor, opts);
+      rawCache.set(cacheKey, { ts: Date.now(), data });
+      return data;
+    },
+  );
 }
 
 // ---- Portuguese Primeira Liga (no football.json entry; .txt only) ----
@@ -276,10 +303,14 @@ async function fetchExtraLeagueMatches(league: ExtraLeague): Promise<{ label: st
 
 const EXTRA_TTL = 60 * 60 * 1000; // these change far less often than fixtures; cache longer
 let extraLeaguesCache: { ts: number; data: { matches: Match[]; teamLeague: Record<string, string> } } | null = null;
+let extraLeaguesInFlight: Promise<{ matches: Match[]; teamLeague: Record<string, string> }> | null = null;
 
 export async function fetchExtraLeaguesPool(): Promise<{ matches: Match[]; teamLeague: Record<string, string> }> {
   if (extraLeaguesCache && Date.now() - extraLeaguesCache.ts < EXTRA_TTL) return extraLeaguesCache.data;
+  return singleflight(() => extraLeaguesInFlight, (p) => { extraLeaguesInFlight = p; }, () => fetchExtraLeaguesPoolUncached());
+}
 
+async function fetchExtraLeaguesPoolUncached(): Promise<{ matches: Match[]; teamLeague: Record<string, string> }> {
   const results = await Promise.all(EXTRA_LEAGUES.map(fetchExtraLeagueMatches));
 
   const matches: Match[] = [];
@@ -320,10 +351,14 @@ async function fetchContinentalHistoryFile(competitionFile: "cl" | "el", season:
 }
 
 let continentalHistoryCache: { ts: number; matches: FootballTxtMatch[] } | null = null;
+let continentalHistoryInFlight: Promise<FootballTxtMatch[]> | null = null;
 
 async function fetchContinentalHistoryRaw(): Promise<FootballTxtMatch[]> {
   if (continentalHistoryCache && Date.now() - continentalHistoryCache.ts < EXTRA_TTL) return continentalHistoryCache.matches;
+  return singleflight(() => continentalHistoryInFlight, (p) => { continentalHistoryInFlight = p; }, () => fetchContinentalHistoryRawUncached());
+}
 
+async function fetchContinentalHistoryRawUncached(): Promise<FootballTxtMatch[]> {
   const requests = CONTINENTAL_HISTORY_SEASONS.flatMap((season) => [
     fetchContinentalHistoryFile("cl", season),
     fetchContinentalHistoryFile("el", season),

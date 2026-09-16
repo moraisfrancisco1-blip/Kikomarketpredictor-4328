@@ -22,6 +22,10 @@ export type PredictExtOpts = LegacyPredictExtOpts & {
 const CURRENT_SEASON = "2627";
 const currentSeasonCache = new Map<string, { ts: number; matches: Match[] }>();
 const CURRENT_TTL = 15 * 60 * 1000;
+// See football-free-sources.ts's singleflight() for why: concurrent callers
+// (many fixture cards firing predict() at once) must share one in-flight
+// fetch instead of each starting their own.
+const currentSeasonInFlight = new Map<string, Promise<Match[]>>();
 
 function toIsoFootballDate(value: string): string {
   const parts = value.trim().split(/[\/\-]/);
@@ -35,6 +39,15 @@ async function fetchCurrentSeason(leagueCode: string): Promise<Match[]> {
   const cached = currentSeasonCache.get(leagueCode);
   if (cached && Date.now() - cached.ts < CURRENT_TTL) return cached.matches;
 
+  const existing = currentSeasonInFlight.get(leagueCode);
+  if (existing) return existing;
+  const p = fetchCurrentSeasonUncached(leagueCode);
+  currentSeasonInFlight.set(leagueCode, p);
+  p.finally(() => currentSeasonInFlight.delete(leagueCode));
+  return p;
+}
+
+async function fetchCurrentSeasonUncached(leagueCode: string): Promise<Match[]> {
   try {
     const res = await fetch(`https://www.football-data.co.uk/mmz4281/${CURRENT_SEASON}/${leagueCode}.csv`, {
       signal: AbortSignal.timeout(8000),
@@ -156,10 +169,22 @@ export function predictFootball(
 // since UEFA competitions have no standalone results feed of their own.
 const CROSS_LEAGUE_TTL = 15 * 60 * 1000;
 let _crossLeagueProduction: { ts: number; data: { matches: Match[]; teamLeague: Record<string, string> } } | null = null;
+// The master entry point every Champions/Europa League fixture card's
+// predict() call reaches — the single highest-value place to coalesce, since
+// its own cold path fans out into ~30+ league fetches plus 5 seasons of
+// continental history. See football-free-sources.ts's singleflight().
+let _crossLeagueInFlight: Promise<{ matches: Match[]; teamLeague: Record<string, string> }> | null = null;
 
 export async function fetchCrossLeagueDataProduction(): Promise<{ matches: Match[]; teamLeague: Record<string, string> }> {
   if (_crossLeagueProduction && Date.now() - _crossLeagueProduction.ts < CROSS_LEAGUE_TTL) return _crossLeagueProduction.data;
+  if (_crossLeagueInFlight) return _crossLeagueInFlight;
+  const p = fetchCrossLeagueDataProductionUncached();
+  _crossLeagueInFlight = p;
+  p.finally(() => { _crossLeagueInFlight = null; });
+  return p;
+}
 
+async function fetchCrossLeagueDataProductionUncached(): Promise<{ matches: Match[]; teamLeague: Record<string, string> }> {
   const codes = Object.keys(FOOTBALL_LEAGUES);
   const [results, extra] = await Promise.all([
     Promise.allSettled(codes.map((code) => fetchFootball(code))),
