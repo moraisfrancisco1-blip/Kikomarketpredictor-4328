@@ -44,28 +44,45 @@ async function fetchText(url: string): Promise<string | null> {
   }
 }
 
-// Try each season candidate; prefer one with at least one unplayed fixture
-// (i.e. still relevant), otherwise keep the first successfully fetched season
-// as a fallback so an off-season still shows the last completed round.
-async function fetchSeasonTxt(urlFor: (season: string) => string): Promise<{ matches: FootballTxtMatch[]; season: string } | null> {
-  let fallback: { matches: FootballTxtMatch[]; season: string } | null = null;
+// A season file's last match date is always that season's final matchday,
+// whether the season is brand new (mostly unplayed, far in the future) or
+// long finished (every match played, months in the past). That — not "does
+// it have any unplayed row" — is what actually tells current from stale: a
+// handful of unfilled rows in an otherwise-finished season (the maintainer
+// hasn't logged the final's result yet) would otherwise look "current"
+// forever.
+export function isRecentOrUpcoming(matches: FootballTxtMatch[], graceDays = 21): boolean {
+  if (!matches.length) return false;
+  const maxDate = matches.reduce((max, m) => (m.date > max ? m.date : max), matches[0]!.date);
+  const cutoff = new Date(`${maxDate}T00:00:00Z`).getTime() + graceDays * 24 * 60 * 60 * 1000;
+  return Date.now() <= cutoff;
+}
+
+// Try each season candidate; prefer the first one that's actually current
+// (see isRecentOrUpcoming). `allowStaleFallback` controls what happens when
+// none is: true keeps the newest stale season anyway (Primeira Liga has no
+// better source, so showing last season's final round beats nothing), false
+// returns null so the caller can fall back to a fresher source instead
+// (Champions/Europa League have ESPN as a live alternative).
+async function fetchSeasonTxt(urlFor: (season: string) => string, opts: { allowStaleFallback?: boolean } = {}): Promise<{ matches: FootballTxtMatch[]; season: string } | null> {
+  const allowStaleFallback = opts.allowStaleFallback ?? true;
+  let staleFallback: { matches: FootballTxtMatch[]; season: string } | null = null;
   for (const season of seasonCandidates()) {
     const text = await fetchText(urlFor(season));
     if (!text) continue;
     const matches = parseFootballTxt(text);
     if (!matches.length) continue;
-    const hasUnplayed = matches.some((m) => !m.score);
-    if (hasUnplayed) return { matches, season };
-    if (!fallback) fallback = { matches, season };
+    if (isRecentOrUpcoming(matches)) return { matches, season };
+    if (!staleFallback) staleFallback = { matches, season };
   }
-  return fallback;
+  return allowStaleFallback ? staleFallback : null;
 }
 
 const rawCache = new Map<string, { ts: number; data: { matches: FootballTxtMatch[]; season: string } | null }>();
-async function cachedSeasonTxt(cacheKey: string, urlFor: (season: string) => string) {
+async function cachedSeasonTxt(cacheKey: string, urlFor: (season: string) => string, opts: { allowStaleFallback?: boolean } = {}) {
   const cached = rawCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < TTL) return cached.data;
-  const data = await fetchSeasonTxt(urlFor);
+  const data = await fetchSeasonTxt(urlFor, opts);
   rawCache.set(cacheKey, { ts: Date.now(), data });
   return data;
 }
@@ -125,6 +142,7 @@ export async function fetchChampionsLeagueFixturesFree(modelTeams: string[]): Pr
   const data = await cachedSeasonTxt(
     "cl",
     (season) => `https://raw.githubusercontent.com/openfootball/champions-league/master/${season}/cl.txt`,
+    { allowStaleFallback: false },
   );
   if (!data) return null;
   return toEuroFixtures(data.matches, modelTeams, "Champions League");
@@ -140,6 +158,7 @@ export async function fetchEuropaLeagueFixturesFree(modelTeams: string[]): Promi
   const data = await cachedSeasonTxt(
     "el",
     (season) => `https://raw.githubusercontent.com/openfootball/champions-league/master/${season}/el.txt`,
+    { allowStaleFallback: false },
   );
   if (!data) return null;
   return toEuroFixtures(data.matches, modelTeams, "Liga Europa");

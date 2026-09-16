@@ -452,6 +452,17 @@ const FIXTURE_NAME_OVERRIDE: Record<string, string> = {
   "stade rennais": "Rennes",
   "rennes": "Rennes",
   "toulouse": "Toulouse",
+  // Portugal — football-data.co.uk abbreviates "Sporting" to "Sp", which no
+  // amount of accent-stripping/suffix-stripping in canon() would guess; every
+  // other Primeira Liga club's canon form already matches or is a substring
+  // match of the model name (verified against the live football-data.co.uk
+  // P1 feed team list), so only these two need an explicit entry.
+  "sporting clube portugal": "Sp Lisbon",
+  "sporting cp": "Sp Lisbon",
+  "sporting lisbon": "Sp Lisbon",
+  "sporting clube braga": "Sp Braga",
+  "sc braga": "Sp Braga",
+  "sporting braga": "Sp Braga",
 };
 
 // Map an openfootball name to the model's team name (or null if no confident match).
@@ -732,14 +743,45 @@ const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const EURO_TTL = 10 * 60 * 1000;
 const euroCache = new Map<string, { ts: number; fixtures: EuroFixture[] }>();
 
-function espnDateRange(daysBack = 7, daysAhead = 90): string {
-  const from = new Date();
-  from.setDate(from.getDate() - daysBack);
-  const to = new Date();
-  to.setDate(to.getDate() + daysAhead);
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-  return `${fmt(from)}-${fmt(to)}`;
+// ESPN's site API used to accept a "dates=YYYYMMDD-YYYYMMDD" range, which is
+// what this used to query with in one call. It now rejects every range query
+// (any span, including adjacent days) with a 400 "Failed to get events
+// endpoint" — confirmed live against the real endpoint, not a transient
+// blip. A single exact date (dates=YYYYMMDD) still works, so the window is
+// queried one day at a time, batched to bound both request count and
+// wall-clock time.
+function windowDates(daysBack: number, daysAhead: number): string[] {
+  const dates: string[] = [];
+  for (let i = -daysBack; i <= daysAhead; i++) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + i);
+    dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`);
+  }
+  return dates;
+}
+
+async function fetchEspnDay(slug: string, compactDate: string): Promise<any[]> {
+  try {
+    const res = await fetch(`${ESPN_BASE}/${slug}/scoreboard?dates=${compactDate}&limit=200`, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return [];
+    const json: any = await res.json();
+    return json.events ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchEspnWindow(slug: string, daysBack: number, daysAhead: number): Promise<any[]> {
+  const dates = windowDates(daysBack, daysAhead);
+  const CONCURRENCY = 10;
+  const events: any[] = [];
+  for (let i = 0; i < dates.length; i += CONCURRENCY) {
+    const batch = dates.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map((d) => fetchEspnDay(slug, d)));
+    for (const dayEvents of results) events.push(...dayEvents);
+  }
+  const seen = new Set<string>();
+  return events.filter((e) => { const id = e?.id; if (id == null) return true; if (seen.has(id)) return false; seen.add(id); return true; });
 }
 
 export async function fetchEuroFixtures(key: string): Promise<EuroFixture[]> {
@@ -750,15 +792,9 @@ export async function fetchEuroFixtures(key: string): Promise<EuroFixture[]> {
   if (!source) return [];
 
   try {
-    // Fetch a wide window: 3 days back → 120 days ahead. Keep daysBack small so
-    // the 200-event limit isn't consumed by past results before reaching today.
-    const range = espnDateRange(3, 120);
-    const url = `${ESPN_BASE}/${source.slug}/scoreboard?dates=${range}&limit=200`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const json: any = await res.json();
+    const events = await fetchEspnWindow(source.slug, 3, 45);
 
-    const fixtures: EuroFixture[] = (json.events ?? []).map((event: any) => {
+    const fixtures: EuroFixture[] = events.map((event: any) => {
       const comp = (event.competitions ?? [])[0] ?? {};
       const competitors: any[] = comp.competitors ?? [];
       const home = competitors.find((c: any) => c.homeAway === "home");

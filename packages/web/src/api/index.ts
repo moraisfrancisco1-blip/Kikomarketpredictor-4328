@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import legacyApp from "./index-legacy.js";
-import { FOOTBALL_LEAGUES, fetchFootball, predictFootball, listTeams, fetchFixtures, selectUpcoming, predictCrossLeagueProduction, fetchCrossLeagueDataProduction, fetchEuroFixtures, selectUpcomingEuro, EURO_SOURCE_KEYS } from "./lib/sports.js";
+import { FOOTBALL_LEAGUES, fetchFootball, predictFootball, listTeams, fetchFixtures, selectUpcoming, predictCrossLeagueProduction, fetchCrossLeagueDataProduction, fetchEuroFixtures, selectUpcomingEuro, EURO_SOURCE_KEYS, mapToModelTeam } from "./lib/sports.js";
 import { recordFootballPrediction, reportFootballLedger, resolveFootballPrediction } from "./lib/football-prediction-ledger.js";
 import { getFootballPrediction, listFootballPredictions, saveFootballPrediction } from "./lib/football-prediction-ledger-store.js";
 import { getFootballPredictionDb, listFootballPredictionsDb, saveFootballPredictionDb } from "./lib/football-prediction-ledger-db.js";
@@ -147,8 +147,11 @@ app.get("/sports/euro/fixtures", async (c) => {
     // Champions/Europa League have a dedicated free fixture dataset
     // (openfootball/champions-league) with team names reconciled to the
     // Dixon-Coles model, so predict lookups succeed reliably. Fall back to
-    // the ESPN scrape when it has nothing yet (e.g. Europa League's
-    // league-phase file lags qualifiers early in the season).
+    // the ESPN scrape when the free dataset is missing or stale (its own
+    // freshness check — see football-free-sources.ts) — e.g. right after a
+    // new season kicks off, before openfootball has published that season's
+    // file. Either way, reconcile names the same way so /sports/euro/predict
+    // lookups aren't left depending on ESPN's own (unreconciled) naming.
     if (key === "ucl" || key === "uel") {
       const { teamLeague } = await fetchCrossLeagueDataProduction();
       const modelTeams = Object.keys(teamLeague);
@@ -157,6 +160,9 @@ app.get("/sports/euro/fixtures", async (c) => {
         const { list, offseason } = selectUpcomingEuro(free, today, days);
         return c.json({ competition: key === "ucl" ? "Champions League" : "Liga Europa", offseason, count: list.length, games: list, source: "openfootball" }, 200);
       }
+      const espnFixtures = (await fetchEuroFixtures(key)).map((f) => ({ ...f, home: mapToModelTeam(f.home, modelTeams) ?? f.home, away: mapToModelTeam(f.away, modelTeams) ?? f.away }));
+      const { list, offseason } = selectUpcomingEuro(espnFixtures, today, days);
+      return c.json({ competition: key === "ucl" ? "Champions League" : "Liga Europa", offseason, count: list.length, games: list, source: "espn" }, 200);
     }
     const fixtures = await fetchEuroFixtures(key);
     const { list, offseason } = selectUpcomingEuro(fixtures, today, days);
