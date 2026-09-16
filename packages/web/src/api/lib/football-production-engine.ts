@@ -1,9 +1,9 @@
-import { fitDixonColes, predictMatch, predictOU, restDaysAt, tuneHalfLife, backtestWithSamples, type DCMatch } from "./dixoncoles";
-import { computeFatigue, computeH2H, computeImportance, type XGTeamStats } from "./sports-enrichment";
-import { computeSportsConfidence } from "./tracker";
-import { clampFootballContextAdjustment, type FootballContextAdjustment } from "./football-model-contract";
-import { normalizeFixtureDate } from "./football-time-context";
-import { multiclassBrier, multiclassLogLoss, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation";
+import { fitDixonColes, predictMatch, predictOU, restDaysAt, tuneHalfLife, backtestWithSamples, type DCMatch } from "./dixoncoles.js";
+import { computeFatigue, computeH2H, computeImportance, type XGTeamStats } from "./sports-enrichment.js";
+import { computeSportsConfidence } from "./tracker.js";
+import { clampFootballContextAdjustment, type FootballContextAdjustment } from "./football-model-contract.js";
+import { normalizeFixtureDate } from "./football-time-context.js";
+import { multiclassBrier, multiclassLogLoss, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation.js";
 
 export type ProductionFootballMatch = { date: string; home: string; away: string; hg: number; ag: number; neutral?: boolean };
 export type ProductionFootballOptions = { fixtureDate: string | Date; neutral?: boolean; context?: FootballContextAdjustment; xg?: Map<string, XGTeamStats> };

@@ -1,7 +1,7 @@
-import type { FootballMatch } from "./dixoncoles";
-import { predictFootball } from "./sports";
-import { multiclassBrier, multiclassLogLoss, topProbabilityCalibration, isFiniteThreeWaySample, type ThreeWaySample } from "./probability-validation";
-import { assessFootballProbabilities, type FootballProbabilityGuard } from "./football-probability-guard";
+import type { FootballMatch } from "./dixoncoles.js";
+import { predictFootball } from "./sports.js";
+import { multiclassBrier, multiclassLogLoss, topProbabilityCalibration, isFiniteThreeWaySample, type ThreeWaySample } from "./probability-validation.js";
+import { assessFootballProbabilities, type FootballProbabilityGuard } from "./football-probability-guard.js";
 
 export type FootballOosResult = { evaluated: number; brier: number | null; logLoss: number | null; accuracy: number | null; baselineBrier: number | null; baselineLogLoss: number | null; calibrationEce: number | null; calibrationMce: number | null; probabilityGuard: FootballProbabilityGuard; warnings: string[] };
 const outcomeOf = (m: FootballMatch): 0 | 1 | 2 => m.homeGoals > m.awayGoals ? 0 : m.homeGoals === m.awayGoals ? 1 : 2;

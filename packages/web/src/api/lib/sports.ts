@@ -1,11 +1,11 @@
-export * from "./sports-legacy";
+export * from "./sports-legacy.js";
 
-import { fetchFootball as fetchHistoricalFootball } from "./sports-legacy";
-import { predictFootballProduction } from "./football-production-engine";
-import type { PredictExtOpts as LegacyPredictExtOpts } from "./sports-legacy";
-import type { Match } from "./sports-legacy";
-import type { FootballContextAdjustment } from "./football-model-contract";
-import type { XGTeamStats } from "./sports-enrichment";
+import { fetchFootball as fetchHistoricalFootball } from "./sports-legacy.js";
+import { predictFootballProduction } from "./football-production-engine.js";
+import type { PredictExtOpts as LegacyPredictExtOpts } from "./sports-legacy.js";
+import type { Match } from "./sports-legacy.js";
+import type { FootballContextAdjustment } from "./football-model-contract.js";
+import type { XGTeamStats } from "./sports-enrichment.js";
 
 export type PredictExtOpts = LegacyPredictExtOpts & {
   fixtureDate?: string | Date;

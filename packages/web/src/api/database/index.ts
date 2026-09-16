@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
-import * as schema from "./schema";
+import * as schema from "./schema.js";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 const databaseAuthToken = process.env.DATABASE_AUTH_TOKEN;

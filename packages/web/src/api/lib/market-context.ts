@@ -1,4 +1,4 @@
-import type { EarningsInfo, SentimentResult } from "./market-enrichment";
+import type { EarningsInfo, SentimentResult } from "./market-enrichment.js";
 
 export type ContextAdjustedPrediction = {
   probabilityUp: number;

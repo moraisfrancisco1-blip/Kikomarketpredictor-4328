@@ -1,4 +1,4 @@
-import { multiclassBrier, multiclassLogLoss, topProbabilityCalibration, type ThreeWaySample } from "./probability-validation";
+import { multiclassBrier, multiclassLogLoss, topProbabilityCalibration, type ThreeWaySample } from "./probability-validation.js";
 
 export type FootballPredictionLedgerRow = {
   predictionId: string;

@@ -1,4 +1,4 @@
-import { multiclassBrier, multiclassLogLoss, reliabilityBuckets, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation";
+import { multiclassBrier, multiclassLogLoss, reliabilityBuckets, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation.js";
 
 export type FootballCalibrationReport = {
   sample: number;

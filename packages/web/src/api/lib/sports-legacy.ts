@@ -4,10 +4,10 @@
 // Football: football-data.co.uk CSVs (free, no key) -> full Dixon-Coles
 // NBA / Tennis: TheSportsDB (free) -> Elo on past results
 
-import { fitDixonColes, predictMatch, backtest, restDays, tuneHalfLife, predictOU, predictHandicap, predictAccumulator, backtestWithSamples, type DCMatch, type Backtest, type OUResult, type HandicapResult, type PredictOpts } from "./dixoncoles";
-import { computeSportsConfidence } from "./tracker";
-import { computeH2H, computeFatigue, computeImportance, type H2HSummary, type FatigueInfo, type GameImportance } from "./sports-enrichment";
-export { fetchLeagueXG, type XGTeamStats } from "./sports-enrichment";
+import { fitDixonColes, predictMatch, backtest, restDays, tuneHalfLife, predictOU, predictHandicap, predictAccumulator, backtestWithSamples, type DCMatch, type Backtest, type OUResult, type HandicapResult, type PredictOpts } from "./dixoncoles.js";
+import { computeSportsConfidence } from "./tracker.js";
+import { computeH2H, computeFatigue, computeImportance, type H2HSummary, type FatigueInfo, type GameImportance } from "./sports-enrichment.js";
+export { fetchLeagueXG, type XGTeamStats } from "./sports-enrichment.js";
 
 // ---------------- Football ----------------
 
