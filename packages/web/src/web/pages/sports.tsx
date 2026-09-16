@@ -1741,13 +1741,13 @@ function EuroFixtures() {
           <div className="text-xs">A nova época começa em agosto/setembro.</div>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-6">
           {dates.map((d) => (
             <div key={d} className="space-y-2">
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-[var(--mp-muted)] px-1 font-semibold">
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-[var(--mp-muted)] px-1 font-semibold sticky top-0 z-10 bg-[var(--mp-bg)] py-1">
                 <Clock size={12} /> {formatDatePt(d)}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {byDate.get(d)!.map((g, i) => (
                   <EuroFixtureCard key={d + i} g={g} competitionName={competitionName} isNational={NATIONAL_TEAM_KEYS.has(key)} />
                 ))}
@@ -1756,6 +1756,30 @@ function EuroFixtures() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function CrestOrInitial({ name, logo, size = 36 }: { name: string; logo?: string | null; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  if (logo && !broken) {
+    return (
+      <img
+        src={logo}
+        alt=""
+        style={{ width: size, height: size }}
+        className="object-contain shrink-0"
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  const initial = name?.trim()?.[0]?.toUpperCase() ?? "?";
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className="shrink-0 rounded-full flex items-center justify-center font-display font-bold text-[var(--mp-muted)] bg-[var(--mp-bg)] border border-[var(--mp-border)]"
+    >
+      {initial}
     </div>
   );
 }
@@ -1786,175 +1810,173 @@ function EuroFixtureCard({ g, competitionName, isNational = false }: { g: any; c
     : p.probAway >= p.probDraw && p.probAway >= p.probHome ? "away"
     : "draw"
   ) : null;
+  const favColor = fav === "home" ? "var(--mp-bull)" : fav === "away" ? "var(--mp-bear)" : "var(--mp-muted)";
+  const lastWord = (s: string) => s?.split(" ").slice(-1)[0] ?? s;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      className="mp-card p-4 space-y-3 hover:shadow-md transition-shadow"
+      className="mp-card overflow-hidden hover:shadow-lg transition-shadow"
+      style={{ borderTop: `3px solid ${p ? favColor : "var(--mp-border)"}` }}
     >
-      {/* Header: round + time */}
-      <div className="flex items-center justify-between text-[10px] text-[var(--mp-muted)]">
-        <span className="font-semibold uppercase tracking-wide">{g.round ?? competitionName}</span>
-        {g.time && <span className="font-mono-n">{g.time} UTC</span>}
-      </div>
-
-      {/* Teams row */}
-      <div className="flex items-center justify-between gap-3">
-        <div className={`flex items-center gap-2 flex-1 min-w-0 ${fav === "home" ? "opacity-100" : "opacity-75"}`}>
-          {g.homeLogo && (
-            <img src={g.homeLogo} alt="" className="w-7 h-7 object-contain shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+      <div className="p-4 space-y-3">
+        {/* Header: round + time */}
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--mp-cyan)] bg-[var(--mp-cyan-light)] px-2 py-0.5 rounded-full">
+            {g.round ?? competitionName}
+          </span>
+          {g.time && (
+            <span className="text-[10px] font-mono-n text-[var(--mp-muted)] flex items-center gap-1">
+              <Clock size={10} /> {g.time} UTC
+            </span>
           )}
-          <div className="min-w-0">
-            <div className="text-sm font-bold truncate text-[var(--mp-text)]">{g.home}</div>
-            {p && <div className="text-[10px] text-[var(--mp-muted)]">xG {p.expHomeGoals?.toFixed(2)} · Elo {p.eloHome}</div>}
+        </div>
+
+        {/* Teams row */}
+        <div className="flex items-center justify-between gap-2">
+          <div className={`flex flex-col items-center gap-1.5 flex-1 min-w-0 transition-opacity ${fav === "away" ? "opacity-60" : "opacity-100"}`}>
+            <CrestOrInitial name={g.home} logo={g.homeLogo} />
+            <div className="text-[13px] font-bold text-center leading-tight text-[var(--mp-text)] line-clamp-2">{g.home}</div>
+            {p && <div className="text-[9px] text-[var(--mp-muted)] font-mono-n">xG {p.expHomeGoals?.toFixed(2)} · {p.eloHome}</div>}
+          </div>
+
+          <div className="shrink-0 flex flex-col items-center gap-1 px-1">
+            {g.played && g.score ? (
+              <span className="text-base font-display font-bold text-[var(--mp-text)] font-mono-n bg-[var(--mp-bg)] rounded-lg px-2.5 py-1 border border-[var(--mp-border)]">
+                {g.score}
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold text-[var(--mp-muted)] font-mono-n">vs</span>
+            )}
+          </div>
+
+          <div className={`flex flex-col items-center gap-1.5 flex-1 min-w-0 transition-opacity ${fav === "home" ? "opacity-60" : "opacity-100"}`}>
+            <CrestOrInitial name={g.away} logo={g.awayLogo} />
+            <div className="text-[13px] font-bold text-center leading-tight text-[var(--mp-text)] line-clamp-2">{g.away}</div>
+            {p && <div className="text-[9px] text-[var(--mp-muted)] font-mono-n">xG {p.expAwayGoals?.toFixed(2)} · {p.eloAway}</div>}
           </div>
         </div>
 
-        {g.played && g.score ? (
-          <span className="text-sm font-bold text-[var(--mp-text)] font-mono-n shrink-0 bg-[var(--mp-bg)] rounded-lg px-3 py-1.5 border border-[var(--mp-border)]">
-            {g.score}
-          </span>
-        ) : (
-          <span className="text-[10px] text-[var(--mp-muted)] font-mono-n shrink-0 bg-[var(--mp-bg)] rounded px-2 py-0.5 border border-[var(--mp-border)]">vs</span>
+        {/* Prediction — always shown for upcoming matches */}
+        {!g.played && (
+          <div className="pt-2 border-t border-[var(--mp-border-soft)]">
+            {pred.isLoading && (
+              <div className="flex items-center gap-2 text-[var(--mp-muted)] text-[11px] py-2 justify-center">
+                <Loader2 className="animate-spin shrink-0" size={12} /> a calcular Dixon-Coles…
+              </div>
+            )}
+            {err && (
+              <div className="flex items-center gap-1.5 text-[10px] text-[var(--mp-muted)] py-1.5">
+                <Globe size={11} className="shrink-0 opacity-60" />
+                <span>Sem cobertura de dados para este confronto ainda.</span>
+              </div>
+            )}
+            {p && (
+              <div className="space-y-2.5">
+                {/* 1X2 bar */}
+                <div>
+                  <div className="text-[10px] mb-1 flex justify-between font-bold font-mono-n">
+                    <span style={{ color: fav === "home" ? "var(--mp-bull)" : "var(--mp-muted)" }}>1 · {(p.probHome * 100).toFixed(0)}%</span>
+                    <span style={{ color: fav === "draw" ? "var(--mp-text)" : "var(--mp-muted)" }}>X · {(p.probDraw * 100).toFixed(0)}%</span>
+                    <span style={{ color: fav === "away" ? "var(--mp-bear)" : "var(--mp-muted)" }}>2 · {(p.probAway * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="h-2.5 rounded-full overflow-hidden flex bg-[var(--mp-bg)]">
+                    <div style={{ width: `${p.probHome * 100}%`, background: "var(--mp-bull)" }} />
+                    <div style={{ width: `${p.probDraw * 100}%`, background: "var(--mp-border)" }} />
+                    <div style={{ width: `${p.probAway * 100}%`, background: "var(--mp-bear)" }} />
+                  </div>
+                </div>
+
+                {/* Quick stats */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  <Stat label="Fav." value={fav === "home" ? lastWord(g.home) : fav === "away" ? lastWord(g.away) : "Empate"} accent />
+                  <Stat label="Over 2.5" value={`${(p.over25 * 100).toFixed(0)}%`} accent={p.over25 > 0.5} />
+                  <Stat label="BTTS" value={`${(p.bttsYes * 100).toFixed(0)}%`} accent={p.bttsYes > 0.5} />
+                  <Stat label="xG total" value={(p.expHomeGoals + p.expAwayGoals).toFixed(1)} />
+                </div>
+
+                {/* Toggle more details */}
+                <button
+                  onClick={() => setShowPred((v) => !v)}
+                  className="w-full flex items-center justify-center gap-1 text-[10px] font-semibold text-[var(--mp-cyan)] hover:text-[var(--mp-accent)] transition-colors py-1"
+                >
+                  {showPred ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  {showPred ? "Menos detalhes" : "Placares + xG detalhado"}
+                </button>
+
+                {showPred && (
+                  <div className="space-y-2 pt-1">
+                    {/* xG individual */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Stat label={`xG ${lastWord(g.home)}`} value={p.expHomeGoals.toFixed(2)} />
+                      <Stat label={`xG ${lastWord(g.away)}`} value={p.expAwayGoals.toFixed(2)} />
+                    </div>
+
+                    {/* Top scores */}
+                    {p.topScores?.length > 0 && (
+                      <div>
+                        <div className="text-[10px] text-[var(--mp-muted)] mb-1.5 font-semibold uppercase tracking-wide">Placares mais prováveis</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {p.topScores.slice(0, 6).map((s: any, i: number) => (
+                            <span key={s.score}
+                              className="px-2 py-0.5 rounded-md text-[11px] font-mono-n font-semibold border"
+                              style={{
+                                background: i === 0 ? "var(--mp-cyan-light)" : "var(--mp-bg)",
+                                borderColor: i === 0 ? "var(--mp-cyan)" : "var(--mp-border)",
+                                color: i === 0 ? "var(--mp-cyan)" : "var(--mp-muted)",
+                              }}>
+                              {s.score} <span className="opacity-70">({(s.prob * 100).toFixed(1)}%)</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* H2H inline for fixtures */}
+                    {p.h2h && p.h2h.total > 0 && (
+                      <div className="text-[10px] text-[var(--mp-muted)] flex items-center gap-3 bg-[var(--mp-bg)] rounded-lg px-3 py-1.5 border border-[var(--mp-border-soft)]">
+                        <span className="font-semibold">H2H:</span>
+                        <span className="text-emerald-400 font-bold">{p.h2h.homeWins}</span>
+                        <span className="text-[var(--mp-muted)]">–</span>
+                        <span className="font-bold">{p.h2h.draws}</span>
+                        <span className="text-[var(--mp-muted)]">–</span>
+                        <span className="text-rose-400 font-bold">{p.h2h.awayWins}</span>
+                        {p.h2h.dominance !== "balanced" && (
+                          <span className="text-[var(--mp-accent)]">· {p.h2h.dominance === "home" ? lastWord(g.home) : lastWord(g.away)} domina</span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="text-[9px] text-[var(--mp-muted)] pt-0.5">
+                      {isNational
+                        ? `Seleções Dixon-Coles · ${p.sample?.toLocaleString()} jogos · ρ=${p.rho} · ${p.gamesHome ?? "?"} hist. ${g.home} · ${p.gamesAway ?? "?"} hist. ${g.away}`
+                        : `Cross-liga · ${p.sample?.toLocaleString()} jogos · ${p.leagueHome ? `${g.home}: ${p.leagueHome}` : ""}${p.leagueHome && p.leagueAway ? " / " : ""}${p.leagueAway ? `${g.away}: ${p.leagueAway}` : ""}`
+                      }
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Venue / scheduled footer */}
+            <div className="flex items-center justify-between pt-2 mt-1 border-t border-[var(--mp-border-soft)]">
+              <div className="text-[10px] text-[var(--mp-cyan)] font-semibold flex items-center gap-1">
+                <CalendarDays size={10} /> Agendado
+              </div>
+              {g.venue && <div className="text-[10px] text-[var(--mp-muted)] truncate max-w-[140px]">{g.venue}</div>}
+            </div>
+          </div>
         )}
 
-        <div className={`flex items-center gap-2 flex-1 min-w-0 justify-end ${fav === "away" ? "opacity-100" : "opacity-75"}`}>
-          <div className="min-w-0 text-right">
-            <div className="text-sm font-bold truncate text-[var(--mp-text)]">{g.away}</div>
-            {p && <div className="text-[10px] text-[var(--mp-muted)]">xG {p.expAwayGoals?.toFixed(2)} · Elo {p.eloAway}</div>}
+        {/* Footer for played */}
+        {g.played && (
+          <div className="text-[10px] text-[var(--mp-muted)] flex items-center gap-1 pt-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--mp-muted)] inline-block" /> Resultado final
           </div>
-          {g.awayLogo && (
-            <img src={g.awayLogo} alt="" className="w-7 h-7 object-contain shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          )}
-        </div>
+        )}
       </div>
-
-      {/* Prediction — always shown for upcoming matches */}
-      {!g.played && (
-        <div className="space-y-2 pt-1 border-t border-[var(--mp-border)]">
-          {pred.isLoading && (
-            <div className="flex items-center gap-2 text-[var(--mp-muted)] text-[11px] py-1">
-              <Loader2 className="animate-spin shrink-0" size={12} /> a calcular Dixon-Coles…
-            </div>
-          )}
-          {err && (
-            <div className="text-[11px] text-amber-600 bg-amber-50 rounded-lg p-2 border border-amber-200">
-              ⚠ {err}
-            </div>
-          )}
-          {p && (
-            <div className="space-y-2">
-              {/* 1X2 bar */}
-              <div>
-                <div className="text-[10px] text-[var(--mp-muted)] mb-1 flex justify-between font-medium">
-                  <span className={fav === "home" ? "font-bold text-[var(--mp-bull)]" : ""}>1 {(p.probHome * 100).toFixed(0)}%</span>
-                  <span className={fav === "draw" ? "font-bold text-slate-600" : ""}>X {(p.probDraw * 100).toFixed(0)}%</span>
-                  <span className={fav === "away" ? "font-bold text-[var(--mp-bear)]" : ""}>2 {(p.probAway * 100).toFixed(0)}%</span>
-                </div>
-                <div className="h-6 rounded-lg overflow-hidden flex text-[10px] font-bold text-white">
-                  <div className={`flex items-center justify-center ${fav === "home" ? "bg-[var(--mp-bull)]" : "bg-green-400"}`}
-                    style={{ width: `${p.probHome * 100}%` }}>
-                    {p.probHome > 0.15 ? `${(p.probHome * 100).toFixed(0)}%` : ""}
-                  </div>
-                  <div className="flex items-center justify-center bg-slate-400"
-                    style={{ width: `${p.probDraw * 100}%` }}>
-                    {p.probDraw > 0.15 ? `${(p.probDraw * 100).toFixed(0)}%` : ""}
-                  </div>
-                  <div className={`flex items-center justify-center ${fav === "away" ? "bg-[var(--mp-bear)]" : "bg-red-400"}`}
-                    style={{ width: `${p.probAway * 100}%` }}>
-                    {p.probAway > 0.15 ? `${(p.probAway * 100).toFixed(0)}%` : ""}
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick stats */}
-              <div className="grid grid-cols-4 gap-1.5">
-                <Stat label="Fav." value={fav === "home" ? g.home.split(" ").slice(-1)[0]! : fav === "away" ? g.away.split(" ").slice(-1)[0]! : "Empate"} accent />
-                <Stat label="Over 2.5" value={`${(p.over25 * 100).toFixed(0)}%`} accent={p.over25 > 0.5} />
-                <Stat label="BTTS" value={`${(p.bttsYes * 100).toFixed(0)}%`} accent={p.bttsYes > 0.5} />
-                <Stat label="xG total" value={(p.expHomeGoals + p.expAwayGoals).toFixed(1)} />
-              </div>
-
-              {/* Toggle more details */}
-              <button
-                onClick={() => setShowPred((v) => !v)}
-                className="w-full flex items-center justify-center gap-1 text-[10px] text-[var(--mp-cyan)] hover:text-[var(--mp-accent)] transition-colors py-0.5"
-              >
-                {showPred ? "▲ Menos detalhes" : "▼ Placares + xG detalhado"}
-              </button>
-
-              {showPred && (
-                <div className="space-y-2 pt-1">
-                  {/* xG individual */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Stat label={`xG ${g.home.split(" ").slice(-1)[0]}`} value={p.expHomeGoals.toFixed(2)} />
-                    <Stat label={`xG ${g.away.split(" ").slice(-1)[0]}`} value={p.expAwayGoals.toFixed(2)} />
-                  </div>
-
-                  {/* Top scores */}
-                  {p.topScores?.length > 0 && (
-                    <div>
-                      <div className="text-[10px] text-[var(--mp-muted)] mb-1.5 font-semibold uppercase tracking-wide">Placares mais prováveis</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {p.topScores.slice(0, 6).map((s: any, i: number) => (
-                          <span key={s.score}
-                            className="px-2 py-0.5 rounded-md text-[11px] font-mono-n font-semibold border"
-                            style={{
-                              background: i === 0 ? "var(--mp-cyan-light)" : "var(--mp-bg)",
-                              borderColor: i === 0 ? "var(--mp-cyan)" : "var(--mp-border)",
-                              color: i === 0 ? "var(--mp-cyan)" : "var(--mp-muted)",
-                            }}>
-                            {s.score} <span className="opacity-70">({(s.prob * 100).toFixed(1)}%)</span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* H2H inline for fixtures */}
-                  {p.h2h && p.h2h.total > 0 && (
-                    <div className="text-[10px] text-[var(--mp-muted)] flex items-center gap-3 bg-[var(--mp-bg)] rounded-lg px-3 py-1.5 border border-[var(--mp-border-soft)]">
-                      <span className="font-semibold">H2H:</span>
-                      <span className="text-emerald-400 font-bold">{p.h2h.homeWins}</span>
-                      <span className="text-[var(--mp-muted)]">–</span>
-                      <span className="font-bold">{p.h2h.draws}</span>
-                      <span className="text-[var(--mp-muted)]">–</span>
-                      <span className="text-rose-400 font-bold">{p.h2h.awayWins}</span>
-                      {p.h2h.dominance !== "balanced" && (
-                        <span className="text-[var(--mp-accent)]">· {p.h2h.dominance === "home" ? g.home.split(" ").slice(-1)[0] : g.away.split(" ").slice(-1)[0]} domina</span>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="text-[9px] text-[var(--mp-muted)] pt-0.5">
-                    {isNational
-                      ? `Seleções Dixon-Coles · ${p.sample?.toLocaleString()} jogos · ρ=${p.rho} · ${p.gamesHome ?? "?"} hist. ${g.home} · ${p.gamesAway ?? "?"} hist. ${g.away}`
-                      : `Cross-liga · ${p.sample?.toLocaleString()} jogos · ${p.leagueHome ? `${g.home}: ${p.leagueHome}` : ""}${p.leagueHome && p.leagueAway ? " / " : ""}${p.leagueAway ? `${g.away}: ${p.leagueAway}` : ""}`
-                    }
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Venue / scheduled footer */}
-          <div className="flex items-center justify-between pt-0.5">
-            <div className="text-[10px] text-[var(--mp-cyan)] font-semibold flex items-center gap-1">
-              <CalendarDays size={10} /> Agendado
-            </div>
-            {g.venue && <div className="text-[10px] text-[var(--mp-muted)] truncate max-w-[140px]">{g.venue}</div>}
-          </div>
-        </div>
-      )}
-
-      {/* Footer for played */}
-      {g.played && (
-        <div className="text-[10px] text-[var(--mp-muted)] flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--mp-muted)] inline-block" /> Resultado final
-        </div>
-      )}
     </motion.div>
   );
 }
