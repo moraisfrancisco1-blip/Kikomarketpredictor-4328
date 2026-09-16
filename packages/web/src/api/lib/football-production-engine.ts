@@ -57,6 +57,28 @@ function calibrateWithHistory(p: { home: number; draw: number; away: number }, s
   return normalize3({ home: shrinkTowardBaseRate(p.home, base.home, samples.length, 50), draw: shrinkTowardBaseRate(p.draw, base.draw, samples.length, 50), away: shrinkTowardBaseRate(p.away, base.away, samples.length, 50) });
 }
 
+// Fitting (half-life tuning + the Dixon-Coles fit itself) is the expensive
+// part of a prediction — cost scales with both match count and team count
+// (2 parameters per team). It depends only on the as-of match window, not on
+// which two teams are being predicted, so every fixture sharing the same
+// fixtureDate and history (the common case: a full round of matches, all
+// predicted "as of today") was needlessly refitting from scratch per pair.
+// The cross-league pool (Champions/Europa League predictions) made this
+// concrete: fitting against it went from ~150 to ~500 teams, and a page of
+// several fixtures was fitting that model over and over.
+const fitCache = new Map<string, { ts: number; tuned: ReturnType<typeof tuneHalfLife>; model: ReturnType<typeof fitDixonColes> }>();
+const FIT_CACHE_TTL = 30 * 60 * 1000;
+function fitCached(dc: DCMatch[]) {
+  const key = `${dc.length}:${dc[0]?.date}:${dc.at(-1)?.date}`;
+  const cached = fitCache.get(key);
+  if (cached && Date.now() - cached.ts < FIT_CACHE_TTL) return cached;
+  const tuned = tuneHalfLife(dc, undefined, { tuningFraction: 0.6, refitEvery: 25 });
+  const model = fitDixonColes(dc, { halfLifeDays: tuned.halfLifeDays });
+  const entry = { ts: Date.now(), tuned, model };
+  fitCache.set(key, entry);
+  return entry;
+}
+
 const validationCache = new Map<string, { ts: number; samples: NonNullable<ReturnType<typeof backtestWithSamples>> }>();
 const CACHE_TTL = 30 * 60 * 1000;
 function getValidationSamples(matches: ProductionFootballMatch[], halfLife: number, testFraction: number) {
@@ -86,8 +108,7 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
   if (asOfMatches.length < 120) throw new Error("not enough historical matches available before fixture date");
 
   const dc = asDC(asOfMatches);
-  const tuned = tuneHalfLife(dc, undefined, { tuningFraction: 0.6, refitEvery: 25 });
-  const model = fitDixonColes(dc, { halfLifeDays: tuned.halfLifeDays });
+  const { tuned, model } = fitCached(dc);
   if (model.att[home] == null || model.att[away] == null) throw new Error("team not found in historical sample");
 
   const context = clampFootballContextAdjustment(options.context ?? {});

@@ -463,6 +463,15 @@ const FIXTURE_NAME_OVERRIDE: Record<string, string> = {
   "sporting clube braga": "Sp Braga",
   "sc braga": "Sp Braga",
   "sporting braga": "Sp Braga",
+  // Cross-league pool (extra European leagues, see football-free-sources.ts):
+  // ESPN's own fixture names occasionally use a different English
+  // transliteration than openfootball's, which canon()'s substring
+  // containment can't bridge on its own (spelling differs mid-word, not just
+  // by a suffix).
+  "olympiacos": "Olympiakos Piraeus",
+  "olympiacos piraeus": "Olympiakos Piraeus",
+  "dynamo kyiv": "Dinamo Kiev",
+  "dynamo kiev": "Dinamo Kiev",
 };
 
 // Map an openfootball name to the model's team name (or null if no confident match).
