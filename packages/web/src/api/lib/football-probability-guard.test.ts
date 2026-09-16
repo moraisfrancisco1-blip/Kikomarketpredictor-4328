@@ -60,4 +60,12 @@ describe("football probability guard", () => {
     expect(Number.isFinite(result.brierDeltaUpper95 ?? NaN)).toBe(true);
     expect(Number.isFinite(result.logLossDeltaUpper95 ?? NaN)).toBe(true);
   });
+
+  test("does not count invalid rows toward OOS evidence", () => {
+    const valid = samples(99, 0.4);
+    const invalid: ThreeWaySample = { probHome: Number.NaN, probDraw: 0.2, probAway: 0.8, outcome: 2 };
+    const result = assessFootballProbabilities([...valid, invalid], [...valid, invalid]);
+    expect(result.band).toBe("insufficient-data");
+    expect(result.publishable).toBe(false);
+  });
 });

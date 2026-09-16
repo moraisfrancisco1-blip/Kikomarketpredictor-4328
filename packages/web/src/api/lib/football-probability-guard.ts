@@ -75,20 +75,24 @@ export function assessFootballProbabilities(
   baselineSamples: ThreeWaySample[],
   minimumSamples = 100,
 ): FootballProbabilityGuard {
-  const maxProbability = samples.reduce((m, s) => Math.max(m, s.probHome, s.probDraw, s.probAway), 0);
-  const brier = multiclassBrier(samples);
-  const logLoss = multiclassLogLoss(samples);
-  const baselineBrier = multiclassBrier(baselineSamples);
-  const baselineLogLoss = multiclassLogLoss(baselineSamples);
-  const ece = topProbabilityCalibration(samples).ece;
+  // All diagnostics and thresholds operate on the same finite OOS population.
+  // Invalid rows must not count toward the minimum sample requirement or distort calibration.
+  const validSamples = samples.filter(isFiniteThreeWaySample);
+  const validBaselineSamples = baselineSamples.filter(isFiniteThreeWaySample);
+  const maxProbability = validSamples.reduce((m, s) => Math.max(m, s.probHome, s.probDraw, s.probAway), 0);
+  const brier = multiclassBrier(validSamples);
+  const logLoss = multiclassLogLoss(validSamples);
+  const baselineBrier = multiclassBrier(validBaselineSamples);
+  const baselineLogLoss = multiclassLogLoss(validBaselineSamples);
+  const ece = topProbabilityCalibration(validSamples).ece;
   const brierDelta = brier != null && baselineBrier != null ? brier - baselineBrier : null;
   const logLossDelta = logLoss != null && baselineLogLoss != null ? logLoss - baselineLogLoss : null;
-  const brierDeltaUpper95 = bootstrapUpper95(pairedDifferences(samples, baselineSamples, "brier"));
-  const logLossDeltaUpper95 = bootstrapUpper95(pairedDifferences(samples, baselineSamples, "logLoss"));
+  const brierDeltaUpper95 = bootstrapUpper95(pairedDifferences(validSamples, validBaselineSamples, "brier"));
+  const logLossDeltaUpper95 = bootstrapUpper95(pairedDifferences(validSamples, validBaselineSamples, "logLoss"));
   const diagnostics = { maxProbability, brier, logLoss, baselineBrier, baselineLogLoss, ece, brierDelta, logLossDelta, brierDeltaUpper95, logLossDeltaUpper95 };
 
-  if (samples.length < minimumSamples) {
-    return { band: "insufficient-data", publishable: false, reason: "fewer than the minimum OOS sample", ...diagnostics };
+  if (validSamples.length < minimumSamples) {
+    return { band: "insufficient-data", publishable: false, reason: "fewer than the minimum finite OOS sample", ...diagnostics };
   }
   const beatsBrier = brierDelta != null && brierDelta < 0;
   const beatsLogLoss = logLossDelta != null && logLossDelta < 0;
