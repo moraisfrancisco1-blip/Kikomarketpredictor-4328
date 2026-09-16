@@ -6,6 +6,7 @@ import type { PredictExtOpts as LegacyPredictExtOpts } from "./sports-legacy.js"
 import type { Match } from "./sports-legacy.js";
 import type { FootballContextAdjustment } from "./football-model-contract.js";
 import type { XGTeamStats } from "./sports-enrichment.js";
+import { fetchExtraLeaguesPool } from "./football-free-sources.js";
 
 export type PredictExtOpts = LegacyPredictExtOpts & {
   fixtureDate?: string | Date;
@@ -160,7 +161,10 @@ export async function fetchCrossLeagueDataProduction(): Promise<{ matches: Match
   if (_crossLeagueProduction && Date.now() - _crossLeagueProduction.ts < CROSS_LEAGUE_TTL) return _crossLeagueProduction.data;
 
   const codes = Object.keys(FOOTBALL_LEAGUES);
-  const results = await Promise.allSettled(codes.map((code) => fetchFootball(code)));
+  const [results, extra] = await Promise.all([
+    Promise.allSettled(codes.map((code) => fetchFootball(code))),
+    fetchExtraLeaguesPool(),
+  ]);
 
   const merged = new Map<string, Match>();
   const teamLeague: Record<string, string> = {};
@@ -173,6 +177,13 @@ export async function fetchCrossLeagueDataProduction(): Promise<{ matches: Match
       teamLeague[m.away] = leagueName;
     }
   });
+  // Extra leagues (see football-free-sources.ts) extend coverage for
+  // Europa/Conference League entrants outside the 6 tracked domestic leagues.
+  // A team already tracked domestically keeps its domestic league label.
+  for (const m of extra.matches) merged.set(`${m.date}|${m.home}|${m.away}`, m);
+  for (const [team, league] of Object.entries(extra.teamLeague)) {
+    if (!teamLeague[team]) teamLeague[team] = league;
+  }
 
   const data = { matches: [...merged.values()].sort((a, b) => a.date.localeCompare(b.date)), teamLeague };
   _crossLeagueProduction = { ts: Date.now(), data };
