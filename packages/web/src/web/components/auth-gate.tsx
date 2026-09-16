@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Lock, Eye, EyeOff, Activity } from "lucide-react";
 
 const SESSION_KEY = "mp_auth";
-// Senha padrão — mude aqui para a sua senha pessoal
+// Vercel: configure VITE_APP_PASSWORD for the production password.
+// The fallback exists only so a deployment without the variable remains usable.
 const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD ?? "predictor2025";
 
 function check(): boolean {
@@ -26,7 +27,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [show, setShow] = useState(false);
   const [shake, setShake] = useState(false);
 
-  // Re-check on focus (e.g. after closing another tab)
   useEffect(() => {
     const handler = () => setAuthed(check());
     window.addEventListener("focus", handler);
@@ -52,7 +52,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen w-full flex items-center justify-center px-4"
       style={{ background: "var(--mp-bg, #f4f6fb)" }}>
       <div className={`w-full max-w-sm ${shake ? "animate-shake" : ""}`}>
-        {/* Logo */}
         <div className="flex flex-col items-center mb-8 gap-3">
           <div className="h-14 w-14 rounded-2xl flex items-center justify-center shadow-sm"
             style={{ background: "#e0f2fe", border: "1px solid #bae6fd" }}>
@@ -62,7 +61,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           <p className="text-sm" style={{ color: "#64748b" }}>Acesso restrito</p>
         </div>
 
-        {/* Card */}
         <form onSubmit={submit}
           className="rounded-2xl p-6 flex flex-col gap-4 shadow-sm"
           style={{ background: "#ffffff", border: "1px solid #e2e8f0" }}>
