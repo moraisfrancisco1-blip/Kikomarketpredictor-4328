@@ -7,6 +7,8 @@
 import { fitDixonColes, predictMatch, backtest, restDays, tuneHalfLife, predictOU, predictHandicap, predictAccumulator, backtestWithSamples, type DCMatch, type Backtest, type OUResult, type HandicapResult, type PredictOpts } from "./dixoncoles.js";
 import { computeSportsConfidence } from "./tracker.js";
 import { computeH2H, computeFatigue, computeImportance, type H2HSummary, type FatigueInfo, type GameImportance } from "./sports-enrichment.js";
+import { buildValidation, calibrateWithHistory, type ProductionFootballValidation } from "./football-production-engine.js";
+import type { ThreeWaySample } from "./probability-validation.js";
 export { fetchLeagueXG, type XGTeamStats } from "./sports-enrichment.js";
 
 // ---------------- Football ----------------
@@ -1148,11 +1150,37 @@ export type IntlPrediction = {
   h2h: H2HSummary;
   importanceHome: GameImportance;
   importanceAway: GameImportance;
+  validation: ProductionFootballValidation;
 };
 
 // Competitive matches (qualifiers, finals) are more informative than friendlies.
 function intlWeight(tournament: string): number {
   return /friendly/i.test(tournament) ? 0.5 : 1;
+}
+
+// Out-of-sample validation for international predictions was previously
+// missing entirely — the club-competition engine (football-production-engine.ts)
+// computes a real chronological holdout (Brier/log-loss vs. a base-rate
+// baseline) and shrinks 1X2 probabilities toward the empirical base rate
+// before returning them; predictInternational returned the raw, uncalibrated
+// Dixon-Coles output with no way to tell if it actually beats picking by base
+// rate. Reusing buildValidation/calibrateWithHistory here closes that gap
+// instead of leaving national-team predictions (World Cup, Nations League,
+// friendlies) on a different, unaudited standard from club predictions.
+const intlValidationCache = new Map<string, { ts: number; calibrationSamples: ThreeWaySample[]; holdout: ReturnType<typeof backtestWithSamples> }>();
+const INTL_VALIDATION_TTL = 30 * 60 * 1000;
+const INTL_HALF_LIFE = 540;
+function intlValidationCached(dc: DCMatch[]) {
+  const key = `${dc.length}:${dc[0]?.date}:${dc.at(-1)?.date}`;
+  const cached = intlValidationCache.get(key);
+  if (cached && Date.now() - cached.ts < INTL_VALIDATION_TTL) return cached;
+  const calibrationEnd = Math.max(1, Math.floor(dc.length * 0.8));
+  const calibrationSamples: ThreeWaySample[] = backtestWithSamples(dc.slice(0, calibrationEnd), { halfLifeDays: INTL_HALF_LIFE, testFraction: 0.25, refitEvery: 40 })
+    .map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
+  const holdout = backtestWithSamples(dc, { halfLifeDays: INTL_HALF_LIFE, testFraction: 0.2, refitEvery: 40 });
+  const entry = { ts: Date.now(), calibrationSamples, holdout };
+  intlValidationCache.set(key, entry);
+  return entry;
 }
 
 export function predictInternational(
@@ -1204,9 +1232,14 @@ export function predictInternational(
     : 0;
   const isFriendly = friendlyRatio > 0.5;
 
+  const calibrationEnd = Math.max(1, Math.floor(dc.length * 0.8));
+  const { calibrationSamples, holdout } = intlValidationCached(dc);
+  const calibrated = calibrateWithHistory({ home: pred.probHome, draw: pred.probDraw, away: pred.probAway }, calibrationSamples);
+  const validation = buildValidation(holdout, matches.slice(0, calibrationEnd));
+
   const confidence = computeSportsConfidence({
     sample: matches.length,
-    probWinner: Math.max(pred.probHome, pred.probDraw, pred.probAway),
+    probWinner: Math.max(calibrated.home, calibrated.draw, calibrated.away),
     isFriendly,
     formAvailable: true,
     gamesHome,
@@ -1219,9 +1252,9 @@ export function predictInternational(
     neutral,
     expHomeGoals: pred.expHomeGoals,
     expAwayGoals: pred.expAwayGoals,
-    probHome: pred.probHome,
-    probDraw: pred.probDraw,
-    probAway: pred.probAway,
+    probHome: calibrated.home,
+    probDraw: calibrated.draw,
+    probAway: calibrated.away,
     over25: pred.over25,
     under25: pred.under25,
     bttsYes: pred.bttsYes,
@@ -1240,6 +1273,7 @@ export function predictInternational(
     h2h: computeH2H(intlAsMatch, home, away),
     importanceHome: { level: "normal", label: "Seleção Nacional", motivationMultiplier: 1.08, description: "Jogos internacionais têm motivação elevada" },
     importanceAway: { level: "normal", label: "Seleção Nacional", motivationMultiplier: 1.08, description: "Jogos internacionais têm motivação elevada" },
+    validation,
   };
 }
 
