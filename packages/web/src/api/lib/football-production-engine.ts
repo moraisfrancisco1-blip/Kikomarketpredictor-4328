@@ -24,7 +24,7 @@ function normalize3(p: { home: number; draw: number; away: number }) { const h =
 function buildElo(matches: ProductionFootballMatch[]) { const ratings: Record<string, number> = {}; const get = (team: string) => ratings[team] ?? 1500; for (const m of [...matches].sort((a, b) => a.date.localeCompare(b.date))) { const rh = get(m.home) + 65, ra = get(m.away), expected = 1 / (1 + 10 ** ((ra - rh) / 400)), actual = m.hg > m.ag ? 1 : m.hg === m.ag ? 0.5 : 0, gd = Math.abs(m.hg - m.ag), multiplier = gd <= 1 ? 1 : gd === 2 ? 1.5 : (11 + gd) / 8, delta = 20 * multiplier * (actual - expected); ratings[m.home] = get(m.home) + delta; ratings[m.away] = get(m.away) - delta; } return ratings; }
 function teamForm(matches: ProductionFootballMatch[], team: string, n = 5): string { return [...matches].filter((m) => m.home === team || m.away === team).sort((a, b) => a.date.localeCompare(b.date)).slice(-n).map((m) => { if (m.hg === m.ag) return "D"; const teamHome = m.home === team; return teamHome ? (m.hg > m.ag ? "W" : "L") : (m.ag > m.hg ? "W" : "L"); }).join("") || "-"; }
 
-function historicalBaseRate(matches: ProductionFootballMatch[]): [number, number, number] {
+export function historicalBaseRate(matches: ProductionFootballMatch[]): [number, number, number] {
   if (!matches.length) return [1 / 3, 1 / 3, 1 / 3];
   let home = 0, draw = 0, away = 0;
   for (const m of matches) {
@@ -35,7 +35,7 @@ function historicalBaseRate(matches: ProductionFootballMatch[]): [number, number
   return [home / matches.length, draw / matches.length, away / matches.length];
 }
 
-function buildValidation(samples: NonNullable<ReturnType<typeof backtestWithSamples>>, baselineHistory: ProductionFootballMatch[], minimum = 100): ProductionFootballValidation {
+export function buildValidation(samples: NonNullable<ReturnType<typeof backtestWithSamples>>, baselineHistory: ProductionFootballMatch[], minimum = 100): ProductionFootballValidation {
   const rows: ThreeWaySample[] = samples.map((s) => ({ probHome: s.probHome, probDraw: s.probDraw, probAway: s.probAway, outcome: s.outcome }));
   // The baseline is estimated exclusively from data before the final holdout.
   // It therefore cannot use the outcomes being evaluated by this validation.
@@ -51,7 +51,7 @@ function buildValidation(samples: NonNullable<ReturnType<typeof backtestWithSamp
   return { sample: rows.length, brier, logLoss, baselineBrier, baselineLogLoss, maxWinnerProbability, sufficient: rows.length >= minimum, warnings };
 }
 
-function calibrateWithHistory(p: { home: number; draw: number; away: number }, samples: ThreeWaySample[]) {
+export function calibrateWithHistory(p: { home: number; draw: number; away: number }, samples: ThreeWaySample[]) {
   if (samples.length < 100) return normalize3(p);
   const base = { home: samples.filter((s) => s.outcome === 0).length / samples.length, draw: samples.filter((s) => s.outcome === 1).length / samples.length, away: samples.filter((s) => s.outcome === 2).length / samples.length };
   return normalize3({ home: shrinkTowardBaseRate(p.home, base.home, samples.length, 50), draw: shrinkTowardBaseRate(p.draw, base.draw, samples.length, 50), away: shrinkTowardBaseRate(p.away, base.away, samples.length, 50) });
