@@ -5,13 +5,11 @@ import { predictFootballProduction } from "./football-production-engine.js";
 import type { PredictExtOpts as LegacyPredictExtOpts } from "./sports-legacy.js";
 import type { Match } from "./sports-legacy.js";
 import type { FootballContextAdjustment } from "./football-model-contract.js";
-import type { XGTeamStats } from "./sports-enrichment.js";
 import { fetchExtraLeaguesPool, fetchContinentalHistoryMatches } from "./football-free-sources.js";
 
 export type PredictExtOpts = LegacyPredictExtOpts & {
   fixtureDate?: string | Date;
   context?: FootballContextAdjustment;
-  xg?: Map<string, XGTeamStats>;
 };
 
 // The legacy source intentionally keeps a fixed historical window. Production
@@ -119,7 +117,6 @@ export function predictFootball(
     fixtureDate: extOpts.fixtureDate,
     neutral: extOpts.neutral,
     context: extOpts.context,
-    xg: extOpts.xg,
   });
 
   return {
@@ -150,13 +147,10 @@ export function predictFootball(
     fatigue: prediction.fatigue,
     importanceHome: prediction.importanceHome,
     importanceAway: prediction.importanceAway,
-    xgHome: prediction.xgHome,
-    xgAway: prediction.xgAway,
     validation: prediction.validation,
     fixtureDate: prediction.fixtureDate,
     restHomeDays: prediction.restHomeDays,
     restAwayDays: prediction.restAwayDays,
-    xgUsed: prediction.xgUsed,
     contextSourceCount: prediction.contextSourceCount,
     warnings: prediction.warnings,
   };
@@ -238,7 +232,6 @@ export async function predictCrossLeagueProduction(home: string, away: string, e
     fixtureDate,
     neutral: extOpts.neutral,
     context: extOpts.context,
-    xg: extOpts.xg,
   });
 
   return {

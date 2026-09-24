@@ -1,12 +1,12 @@
 import { fitDixonColes, predictMatch, predictOU, restDaysAt, tuneHalfLife, backtestWithSamples, type DCMatch } from "./dixoncoles.js";
-import { computeFatigue, computeH2H, computeImportance, type XGTeamStats } from "./sports-enrichment.js";
+import { computeFatigue, computeH2H, computeImportance } from "./sports-enrichment.js";
 import { computeSportsConfidence } from "./tracker.js";
 import { clampFootballContextAdjustment, type FootballContextAdjustment } from "./football-model-contract.js";
 import { normalizeFixtureDate } from "./football-time-context.js";
 import { multiclassBrier, multiclassLogLoss, shrinkTowardBaseRate, type ThreeWaySample } from "./probability-validation.js";
 
 export type ProductionFootballMatch = { date: string; home: string; away: string; hg: number; ag: number; neutral?: boolean };
-export type ProductionFootballOptions = { fixtureDate: string | Date; neutral?: boolean; context?: FootballContextAdjustment; xg?: Map<string, XGTeamStats> };
+export type ProductionFootballOptions = { fixtureDate: string | Date; neutral?: boolean; context?: FootballContextAdjustment };
 export type ProductionFootballValidation = { sample: number; brier: number | null; logLoss: number | null; baselineBrier: number | null; baselineLogLoss: number | null; maxWinnerProbability: number; sufficient: boolean; warnings: string[] };
 export type ProductionFootballPrediction = {
   home: string; away: string; fixtureDate: string; expHomeGoals: number; expAwayGoals: number;
@@ -15,7 +15,7 @@ export type ProductionFootballPrediction = {
   halfLife: number; sample: number; ouLines: ReturnType<typeof predictOU>; formHome: string; formAway: string;
   confidence: number; restHomeDays?: number; restAwayDays?: number; fatigue: ReturnType<typeof computeFatigue>;
   h2h: ReturnType<typeof computeH2H>; importanceHome: ReturnType<typeof computeImportance>["home"];
-  importanceAway: ReturnType<typeof computeImportance>["away"]; xgHome?: number; xgAway?: number; xgUsed: false;
+  importanceAway: ReturnType<typeof computeImportance>["away"];
   contextSourceCount: number; validation: ProductionFootballValidation; warnings: string[];
 };
 
@@ -133,7 +133,6 @@ function getValidationSamples(matches: ProductionFootballMatch[], halfLife: numb
  * 2) the next 20% is a calibration window;
  * 3) the final 20% is a sealed holdout used only for OOS measurement;
  * 4) no holdout outcome is used to tune or calibrate the live prediction.
- * xG is display-only until historical per-match xG has passed OOS validation.
  */
 export function predictFootballProduction(matches: ProductionFootballMatch[], home: string, away: string, options: ProductionFootballOptions): ProductionFootballPrediction {
   if (!home || !away || home === away) throw new Error("distinct home and away teams are required");
@@ -174,10 +173,6 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
   const validation = buildValidation(holdoutSamples, asOfMatches.slice(0, calibrationEnd));
   const elo = eloCached(asOfMatches, key);
   const warnings = [...validation.warnings, ...(context.warnings ?? [])];
-  const xgHome = options.xg?.get(home)?.xgFor;
-  const xgAway = options.xg?.get(away)?.xgFor;
-  if (options.xg && (xgHome == null || xgAway == null)) warnings.push("xG data incomplete; ignored");
-  warnings.push("xG is display-only until historical out-of-sample xG validation is available");
 
   return {
     home, away, fixtureDate, expHomeGoals: raw.expHomeGoals, expAwayGoals: raw.expAwayGoals,
@@ -189,6 +184,6 @@ export function predictFootballProduction(matches: ProductionFootballMatch[], ho
     confidence: computeSportsConfidence({ sample: asOfMatches.length, probWinner: Math.max(calibrated.home, calibrated.draw, calibrated.away), isFriendly: false, formAvailable: true, gamesHome: asOfMatches.filter((m) => m.home === home || m.away === home).length, gamesAway: asOfMatches.filter((m) => m.home === away || m.away === away).length }),
     restHomeDays, restAwayDays, fatigue: computeFatigue(asOfMatches, home, away, fixtureDate.slice(0, 10)), h2h: computeH2H(asOfMatches, home, away),
     importanceHome: computeImportance(asOfMatches, home, away).home, importanceAway: computeImportance(asOfMatches, home, away).away,
-    xgHome, xgAway, xgUsed: false, contextSourceCount: context.sourceCount ?? 0, validation, warnings: [...new Set(warnings)],
+    contextSourceCount: context.sourceCount ?? 0, validation, warnings: [...new Set(warnings)],
   };
 }

@@ -9,7 +9,6 @@ import { computeSportsConfidence } from "./tracker.js";
 import { computeH2H, computeFatigue, computeImportance, type H2HSummary, type FatigueInfo, type GameImportance } from "./sports-enrichment.js";
 import { buildValidation, calibrateWithHistory, type ProductionFootballValidation } from "./football-production-engine.js";
 import type { ThreeWaySample } from "./probability-validation.js";
-export { fetchLeagueXG, type XGTeamStats } from "./sports-enrichment.js";
 
 // ---------------- Football ----------------
 
@@ -206,8 +205,6 @@ export type FootballPrediction = {
   fatigue: FatigueInfo;
   importanceHome: GameImportance;
   importanceAway: GameImportance;
-  xgHome?: number;   // avg xG scored per game (from understat — may be undefined)
-  xgAway?: number;
   // Walk-forward out-of-sample DC predictions — the ONLY valid XGBoost training set.
   // Each entry was predicted using only data PRIOR to that match (no circular leakage).
   historyWithProbs?: Array<{
