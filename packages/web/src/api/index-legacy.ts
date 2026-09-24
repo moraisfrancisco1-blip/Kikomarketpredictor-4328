@@ -9,7 +9,6 @@ import {
   fetchSentiment,
   fetchEarningsInfo,
 } from "./lib/market.js";
-import { fetchLeagueXG } from "./lib/sports.js";
 import {
   generateTickets,
   generateTicket,
@@ -117,17 +116,6 @@ const app = new Hono()
     try {
       const info = await fetchEarningsInfo(symbol);
       return c.json({ earnings: info }, 200);
-    } catch (e: any) {
-      return c.json({ error: e.message || "failed" }, 502);
-    }
-  })
-  // ---- League xG stats ----
-  .get('/sports/football/xg', async (c) => {
-    const league = (c.req.query("league") ?? "").toUpperCase();
-    if (!league) return c.json({ error: "league required" }, 400);
-    try {
-      const xgMap = await fetchLeagueXG(league);
-      return c.json({ xg: Object.fromEntries(xgMap) }, 200);
     } catch (e: any) {
       return c.json({ error: e.message || "failed" }, 502);
     }
